@@ -71,6 +71,7 @@ RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framewor
 
 ENV APP_ENV="production"
 ENV APP_DEBUG="false"
+ENV APP_NAME="CoreArr"
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 
