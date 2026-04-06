@@ -61,42 +61,6 @@ CoreArr is built with the latest technologies to ensure maximum performance and 
 
 ## 🏗️ Installation
 
-### Prerequisites
-- PHP 8.3+
-- Composer
-- Node.js & NPM
-- SQLite (default) or MySQL/PostgreSQL
-
-### Local Setup
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/pokertour/corearr.git
-   cd corearr
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   composer install
-   npm install
-   ```
-
-3. **Configure Environment:**
-   ```bash
-   cp .env.example .env
-   php artisan key:generate
-   ```
-
-4. **Run Migrations:**
-   ```bash
-   php artisan migrate
-   ```
-
-5. **Build Assets & Start:**
-   ```bash
-   npm run build
-   php artisan serve
-   ```
-
 ### 🐳 Docker Deployment (Recommended)
 
 CoreArr is built for performance with **FrankenPHP** and **Laravel Octane**. The easiest way to deploy is using Docker and the provided `docker-compose.yml`.
@@ -124,8 +88,6 @@ A pre-built, optimized image is available on the **GitHub Container Registry**:
 ```yaml
 image: ghcr.io/pokertour/corearr:latest
 ```
-
-*Note: Pushing a version tag (e.g., `v1.0.0`) to GitHub automatically triggers a build and push to GHCR via GitHub Actions.*
 
 #### 3. Persistence
 Make sure to map the following volumes to ensure your configuration and database are persistent:

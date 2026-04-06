@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
-    <title>{{ $title ?? 'Dashboard' }} &mdash; CoreArr</title>
+    <title>{{ __($title ?? 'messages.dashboard') }} &mdash; CoreArr</title>
 
     {{-- Thème : appliqué sur <html>, résistant aux swaps wire:navigate (morphdom) --}}
     <script>
@@ -46,7 +46,7 @@
         <!-- Header -->
         <header class="h-16 px-6 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800/50">
             <h1 class="text-xl font-bold bg-linear-to-r from-core-primary to-core-secondary bg-clip-text text-transparent">
-                {{ $title ?? 'CoreArr' }}
+                {{ __($title ?? 'CoreArr') }}
             </h1>
             <div class="flex items-center gap-4">
                 <button onclick="toggleCoreArrTheme()" class="cursor-pointer p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition outline-none"

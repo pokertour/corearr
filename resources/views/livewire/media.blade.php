@@ -8,7 +8,7 @@ use App\Services\MediaStack\MediaStackService;
 use Illuminate\Support\Facades\Http;
 use App\Models\ServiceSetting;
 
-new #[Layout('components.layouts.app')] #[Title('Médias')] class extends Component {
+new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends Component {
     #[Url]
     public string $viewMode = 'grid';
     
@@ -146,14 +146,14 @@ new #[Layout('components.layouts.app')] #[Title('Médias')] class extends Compon
                 ->post(rtrim($settings->base_url, '/') . $endpoint, $payload);
 
             if ($response->successful()) {
-                $this->dispatch('notify', title: 'Média ajouté !', message: $item['title'] . " a été ajouté.", type: 'success');
+                $this->dispatch('notify', title: __('messages.media_added_title'), message: __('messages.media_added_message', ['title' => $item['title']]), type: 'success');
                 $this->clearSearch();
                 $this->loadMedia(new MediaStackService());
             } else {
-                $this->dispatch('notify', title: 'Erreur', message: $response->json()['message'] ?? 'Impossible d\'ajouter.', type: 'error');
+                $this->dispatch('notify', title: __('messages.error'), message: $response->json()['message'] ?? __('messages.media_add_error_message'), type: 'error');
             }
         } catch (\Exception $e) {
-            $this->dispatch('notify', title: 'Erreur', message: $e->getMessage(), type: 'error');
+            $this->dispatch('notify', title: __('messages.error'), message: $e->getMessage(), type: 'error');
         }
     }
 
@@ -171,10 +171,10 @@ new #[Layout('components.layouts.app')] #[Title('Médias')] class extends Compon
 <div class="space-y-6">
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-            <h2 class="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Gestion des Médias</h2>
+            <h2 class="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">{{ __('messages.media_management') }}</h2>
             <div class="flex items-center gap-4 mt-1">
-                 <button wire:click="$set('activeTab', 'movies')" class="text-sm font-medium transition {{ $activeTab === 'movies' ? 'text-core-primary underline underline-offset-8' : 'text-zinc-500 hover:text-zinc-700' }}">Films</button>
-                 <button wire:click="$set('activeTab', 'series')" class="text-sm font-medium transition {{ $activeTab === 'series' ? 'text-core-primary underline underline-offset-8' : 'text-zinc-500 hover:text-zinc-700' }}">Séries</button>
+                 <button wire:click="$set('activeTab', 'movies')" class="text-sm font-medium transition {{ $activeTab === 'movies' ? 'text-core-primary underline underline-offset-8' : 'text-zinc-500 hover:text-zinc-700' }}">{{ __('messages.movies') }}</button>
+                 <button wire:click="$set('activeTab', 'series')" class="text-sm font-medium transition {{ $activeTab === 'series' ? 'text-core-primary underline underline-offset-8' : 'text-zinc-500 hover:text-zinc-700' }}">{{ __('messages.series') }}</button>
             </div>
         </div>
 
@@ -183,7 +183,7 @@ new #[Layout('components.layouts.app')] #[Title('Médias')] class extends Compon
                 <input type="text" 
                        wire:model.live.debounce.500ms="searchQuery" 
                        wire:keydown.enter="search"
-                       placeholder="Rechercher..." 
+                       placeholder="{{ __('messages.search_media_placeholder') }}" 
                        class="w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition" />
                 <svg class="absolute left-3 top-2.5 w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                 
@@ -232,9 +232,9 @@ new #[Layout('components.layouts.app')] #[Title('Médias')] class extends Compon
             <div class="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 rounded-2xl mb-4">
                 <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
             </div>
-            <h3 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{{ ucfirst($serviceName) }} non configuré</h3>
-            <p class="text-zinc-500 mb-6 max-w-sm">Veuillez configurer {{ ucfirst($serviceName) }} pour afficher vos {{ $activeTab === 'movies' ? 'films' : 'séries' }}.</p>
-            <a href="/settings" wire:navigate class="px-6 py-2.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold rounded-xl transition">Configuration</a>
+            <h3 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{{ __('messages.not_configured_title', ['service' => ucfirst($serviceName)]) }}</h3>
+            <p class="text-zinc-500 mb-6 max-w-sm">{{ __('messages.not_configured_subtitle', ['service' => ucfirst($serviceName), 'type' => $activeTab === 'movies' ? __('messages.films') : __('messages.series')]) }}</p>
+            <a href="/settings" wire:navigate class="px-6 py-2.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold rounded-xl transition">{{ __('messages.config_button') }}</a>
         </div>
     @else
         @if($viewMode === 'grid')
@@ -250,7 +250,7 @@ new #[Layout('components.layouts.app')] #[Title('Médias')] class extends Compon
                             
                             <div class="absolute top-2 right-2">
                                  <span class="px-2 py-0.5 text-[9px] font-black uppercase tracking-tighter rounded-full {{ ($item['monitored'] ?? false) ? 'bg-core-primary text-white' : 'bg-zinc-900/80 text-zinc-400' }}">
-                                     {{ ($item['monitored'] ?? false) ? 'Tracké' : 'Ignoré' }}
+                                     {{ ($item['monitored'] ?? false) ? __('messages.tracked') : __('messages.ignored') }}
                                  </span>
                             </div>
                         </div>
@@ -281,13 +281,13 @@ new #[Layout('components.layouts.app')] #[Title('Médias')] class extends Compon
                                 </td>
                                 <td class="px-6 py-3 text-center">
                                      <span class="px-2 py-0.5 text-[9px] font-black uppercase tracking-tighter rounded-full {{ ($item['monitored'] ?? false) ? 'bg-core-primary/10 text-core-primary' : 'bg-zinc-100 text-zinc-400' }}">
-                                         {{ ($item['monitored'] ?? false) ? 'Tracké' : 'Ignoré' }}
+                                         {{ ($item['monitored'] ?? false) ? __('messages.tracked') : __('messages.ignored') }}
                                      </span>
                                 </td>
                                 <td class="px-6 py-3 text-center">
                                      <div class="inline-flex items-center gap-1.5">
                                          <div class="w-1.5 h-1.5 rounded-full {{ ($item['hasFile'] ?? false) ? 'bg-green-500' : 'bg-yellow-500' }}"></div>
-                                         <span class="text-[10px] font-bold text-zinc-500">{{ ($item['hasFile'] ?? false) ? 'Dispo' : 'Manquant' }}</span>
+                                         <span class="text-[10px] font-bold text-zinc-500">{{ ($item['hasFile'] ?? false) ? __('messages.available') : __('messages.missing') }}</span>
                                      </div>
                                 </td>
                                 <td class="px-6 py-3 text-right text-xs text-zinc-400 font-medium tracking-tight">{{ $item['year'] }}</td>
@@ -301,7 +301,7 @@ new #[Layout('components.layouts.app')] #[Title('Médias')] class extends Compon
         @if($hasMore)
             <div class="flex justify-center pt-8">
                 <button wire:click="loadMore" class="px-8 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition shadow-sm">
-                    Charger plus de {{ $activeTab === 'movies' ? 'films' : 'séries' }}
+                    {{ __('messages.load_more', ['type' => $activeTab === 'movies' ? __('messages.films') : __('messages.series')]) }}
                 </button>
             </div>
         @endif

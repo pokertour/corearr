@@ -55,7 +55,7 @@ new #[Lazy] class extends Component {
             <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
             </div>
-            <h3 class="text-lg font-semibold">Téléchargements</h3>
+            <h3 class="text-lg font-semibold">{{ __('messages.downloads') }}</h3>
         </div>
         
         @if($isConfigured && !empty($stats))
@@ -70,13 +70,13 @@ new #[Lazy] class extends Component {
 
     @if(!$isConfigured)
         <div class="flex flex-col items-center justify-center py-12 text-center">
-            <p class="text-sm text-zinc-500 mb-4">qBittorrent n'est pas encore configuré.</p>
-            <a href="/settings" wire:navigate class="px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-medium rounded-lg shadow-sm">Configurer</a>
+            <p class="text-sm text-zinc-500 mb-4">{{ __('messages.qbit_not_configured') }}</p>
+            <a href="/settings" wire:navigate class="px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-medium rounded-lg shadow-sm">{{ __('messages.configure') }}</a>
         </div>
     @elseif(empty($torrents))
         <div class="flex flex-col items-center justify-center py-12 text-center">
             <svg class="w-12 h-12 text-zinc-200 dark:text-zinc-800 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-            <p class="text-sm text-zinc-500">Aucun téléchargement actif.</p>
+            <p class="text-sm text-zinc-500">{{ __('messages.no_active_downloads') }}</p>
         </div>
     @else
         <div class="space-y-4">
@@ -89,7 +89,7 @@ new #[Lazy] class extends Component {
                             </p>
                             <div class="flex items-center gap-2 mt-0.5">
                                 <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">
-                                    Ratio: {{ round($torrent['ratio'] ?? 0, 2) }}
+                                    {{ __('messages.ratio') }}: {{ round($torrent['ratio'] ?? 0, 2) }}
                                 </span>
                                 @if(($torrent['upspeed'] ?? 0) > 0)
                                     <span class="w-0.5 h-0.5 bg-zinc-300 dark:bg-zinc-700 rounded-full"></span>
@@ -117,7 +117,7 @@ new #[Lazy] class extends Component {
             @endforeach
             
             <a href="/torrents" wire:navigate class="block text-center py-2 text-xs font-semibold text-blue-500 hover:text-blue-600 transition">
-                Voir tous les torrents &rarr;
+                {{ __('messages.view_all') }} &rarr;
             </a>
         </div>
     @endif

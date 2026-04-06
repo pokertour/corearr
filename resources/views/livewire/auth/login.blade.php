@@ -35,22 +35,29 @@ new class extends Component {
                 <img src="/assets/logo/logo.svg" alt="CoreArr Logo" class="w-full h-full drop-shadow-md" />
             </div>
             <h2 class="mt-6 text-center text-3xl font-extrabold text-zinc-900 dark:text-white">
-                CoreArr Central
+                {{ __('messages.login_title') }}
             </h2>
             <p class="mt-2 text-center text-sm text-zinc-500">
-                Identifiez-vous pour contrôler l'infrastructure.
+                {{ __('messages.login_subtitle') }}
             </p>
         </div>
+
+        @if (session('status'))
+            <div class="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 p-4 rounded-xl text-sm font-medium border border-green-200 dark:border-green-800/50">
+                {{ session('status') }}
+            </div>
+        @endif
+
         <form class="mt-8 space-y-6" wire:submit="login">
             <div class="space-y-4">
                 <div>
-                    <label for="email" class="sr-only">Adresse Email</label>
-                    <input wire:model="email" id="email" name="email" type="email" autocomplete="email" required class="appearance-none rounded-xl relative block w-full px-3 py-3 border border-zinc-300 dark:border-zinc-800 placeholder-zinc-500 text-zinc-900 dark:text-white bg-zinc-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-core-primary focus:border-core-primary focus:z-10 sm:text-sm" placeholder="Adresse Email">
+                    <label for="email" class="sr-only">{{ __('messages.email') }}</label>
+                    <input wire:model="email" id="email" name="email" type="email" autocomplete="email" required class="appearance-none rounded-xl relative block w-full px-3 py-3 border border-zinc-300 dark:border-zinc-800 placeholder-zinc-500 text-zinc-900 dark:text-white bg-zinc-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-core-primary focus:border-core-primary focus:z-10 sm:text-sm" placeholder="{{ __('messages.email') }}">
                     @error('email') <span class="text-xs text-red-500 mt-1 block">{{ $message }}</span> @enderror
                 </div>
                 <div>
-                    <label for="password" class="sr-only">Mot de passe</label>
-                    <input wire:model="password" id="password" name="password" type="password" autocomplete="current-password" required class="appearance-none rounded-xl relative block w-full px-3 py-3 border border-zinc-300 dark:border-zinc-800 placeholder-zinc-500 text-zinc-900 dark:text-white bg-zinc-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-core-primary focus:border-core-primary focus:z-10 sm:text-sm" placeholder="Mot de passe">
+                    <label for="password" class="sr-only">{{ __('messages.password_label') }}</label>
+                    <input wire:model="password" id="password" name="password" type="password" autocomplete="current-password" required class="appearance-none rounded-xl relative block w-full px-3 py-3 border border-zinc-300 dark:border-zinc-800 placeholder-zinc-500 text-zinc-900 dark:text-white bg-zinc-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-core-primary focus:border-core-primary focus:z-10 sm:text-sm" placeholder="{{ __('messages.password_label') }}">
                 </div>
             </div>
 
@@ -58,20 +65,20 @@ new class extends Component {
                 <div class="flex items-center">
                     <input id="remember-me" wire:model="remember" name="remember-me" type="checkbox" class="h-4 w-4 text-core-primary focus:ring-core-primary border-zinc-300 dark:border-zinc-800 rounded dark:bg-zinc-900">
                     <label for="remember-me" class="ml-2 block text-sm text-zinc-900 dark:text-zinc-300">
-                        Se souvenir de moi
+                        {{ __('messages.remember_me') }}
                     </label>
                 </div>
 
                 <div class="text-sm">
                     <a href="{{ route('password.request') }}" wire:navigate class="font-medium text-core-primary hover:text-core-primary/80 transition">
-                        Mot de passe oublié ?
+                        {{ __('messages.forgot_password') }}
                     </a>
                 </div>
             </div>
 
             <div>
                 <button type="submit" class="cursor-pointer group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-xl text-white bg-core-primary hover:bg-core-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-core-primary transition shadow-lg shadow-core-primary/30">
-                    Connexion
+                    {{ __('messages.login_button') }}
                 </button>
             </div>
         </form>

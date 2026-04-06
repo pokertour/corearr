@@ -8,7 +8,7 @@ use App\Models\ServiceSetting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
 
-new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Component {
+new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class extends Component {
     public bool $isConfigured = false;
     public array $torrents = [];
     public ?string $confirmingDeletion = null;
@@ -107,22 +107,22 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
     public function pauseTorrent(string $hash, MediaStackService $service)
     {
         if ($service->performQbitAction('pause', $hash)) {
-            $this->dispatch('toast', message: "Torrent mis en pause.", type: 'success');
+            $this->dispatch('toast', message: __('messages.torrent_paused'), type: 'success');
             usleep(250000); // Wait 250ms for qBit to update state
             $this->refreshTorrents($service);
         } else {
-            $this->dispatch('toast', message: "Erreur lors de la mise en pause. Vérifiez les logs.", type: 'error');
+            $this->dispatch('toast', message: __('messages.error_performing_action'), type: 'error');
         }
     }
 
     public function resumeTorrent(string $hash, MediaStackService $service)
     {
         if ($service->performQbitAction('resume', $hash)) {
-            $this->dispatch('toast', message: "Torrent repris.", type: 'success');
+            $this->dispatch('toast', message: __('messages.torrent_resumed'), type: 'success');
             usleep(250000); // Wait 250ms for qBit to update state
             $this->refreshTorrents($service);
         } else {
-            $this->dispatch('toast', message: "Erreur lors de la reprise. Vérifiez les logs.", type: 'error');
+            $this->dispatch('toast', message: __('messages.error_performing_action'), type: 'error');
         }
     }
 
@@ -131,12 +131,12 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
         if (!$this->confirmingDeletion) return;
         
         if ($service->performQbitAction('delete', $this->confirmingDeletion)) {
-            $this->dispatch('toast', message: "Torrent supprimé.", type: 'success');
+            $this->dispatch('toast', message: __('messages.torrent_deleted'), type: 'success');
             $this->confirmingDeletion = null;
             usleep(250000); // Wait 250ms for qBit to update state
             $this->refreshTorrents($service);
         } else {
-            $this->dispatch('toast', message: "Erreur lors de la suppression. Vérifiez les logs.", type: 'error');
+            $this->dispatch('toast', message: __('messages.error_performing_action'), type: 'error');
         }
     }
 
@@ -187,18 +187,18 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
             <div class="w-16 h-16 bg-blue-500/10 flex items-center justify-center text-blue-500 rounded-2xl mb-4">
                 <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
             </div>
-            <h3 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">qBittorrent non configuré</h3>
-            <p class="text-zinc-500 mb-6 max-w-sm">Connectez votre instance qBittorrent dans les paramètres pour gérer vos téléchargements ici.</p>
+            <h3 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{{ __('messages.qbit_not_configured') }}</h3>
+            <p class="text-zinc-500 mb-6 max-w-sm">{{ __('messages.torrent_subtitle') }}</p>
             <a href="/settings" wire:navigate class="px-6 py-2.5 bg-core-primary text-white font-bold rounded-xl shadow-lg shadow-core-primary/20 hover:bg-core-primary/90 transition">
-                Aller aux paramètres
+                {{ __('messages.go_to_settings') }}
             </a>
         </div>
     @else
         <!-- Header -->
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-                <h2 class="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Gestion des Torrents</h2>
-                <p class="text-sm text-zinc-500">Gérez vos téléchargements en cours et terminés.</p>
+                <h2 class="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">{{ __('messages.torrent_management') }}</h2>
+                <p class="text-sm text-zinc-500">{{ __('messages.torrent_subtitle') }}</p>
             </div>
 
             <div class="flex items-center gap-2">
@@ -216,29 +216,29 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
                 </div>
                 <input wire:model.live.debounce.300ms="search" 
                        type="text" 
-                       placeholder="Rechercher par nom..." 
+                       placeholder="{{ __('messages.search_placeholder') }}" 
                        class="w-full pl-10 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-core-primary outline-none transition">
             </div>
 
             <div class="flex items-center gap-4">
                 <select wire:model.live="filterState" class="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
-                    <option value="all">Tous les statuts</option>
-                    <option value="downloading">Téléchargement</option>
-                    <option value="paused">En pause / Stop</option>
-                    <option value="seeding">Partage (Seeding)</option>
-                    <option value="completed">Terminés</option>
+                    <option value="all">{{ __('messages.all_statuses') }}</option>
+                    <option value="downloading">{{ __('messages.downloads') }}</option>
+                    <option value="paused">{{ __('messages.paused') }}</option>
+                    <option value="seeding">{{ __('messages.seeding') }}</option>
+                    <option value="completed">{{ __('messages.completed') }}</option>
                 </select>
 
                 <div x-data="{ open: false }" class="relative">
                     <button @click="open = !open" class="cursor-pointer px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
-                        Colonnes
+                        {{ __('messages.columns') }}
                     </button>
                     <div x-show="open" @click.away="open = false" class="absolute right-0 mt-2 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-20 p-2">
                         @foreach($columns as $col => $visible)
                             <label class="flex items-center gap-3 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg cursor-pointer transition">
                                 <input type="checkbox" wire:click="toggleColumn('{{ $col }}')" {{ $visible ? 'checked' : '' }} class="rounded border-zinc-300 text-core-primary focus:ring-core-primary">
-                                <span class="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-tighter">{{ $col }}</span>
+                                <span class="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-tighter">{{ __('messages.' . $col) }}</span>
                             </label>
                         @endforeach
                     </div>
@@ -252,30 +252,30 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
                     <tr class="bg-zinc-50 dark:bg-zinc-800/50">
                         @if($columns['name']) 
                             <th wire:click="setSort('name')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition">
-                                Nom @if($sortBy === 'name') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
+                                {{ __('messages.name') }} @if($sortBy === 'name') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
                             </th> 
                         @endif
                         @if($columns['size']) 
                             <th wire:click="setSort('size')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition text-center">
-                                Taille @if($sortBy === 'size') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
+                                {{ __('messages.size') }} @if($sortBy === 'size') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
                             </th> 
                         @endif
                         @if($columns['progress']) 
                             <th wire:click="setSort('progress')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition text-center">
-                                Progrès @if($sortBy === 'progress') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
+                                {{ __('messages.progress') }} @if($sortBy === 'progress') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
                             </th> 
                         @endif
-                        @if($columns['status']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center">Statut</th> @endif
-                        @if($columns['speed']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center">Vitesse</th> @endif
+                        @if($columns['status']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center">{{ __('messages.status') }}</th> @endif
+                        @if($columns['speed']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center">{{ __('messages.download_speed') }}/{{ __('messages.upload_speed') }}</th> @endif
                         @if($columns['eta']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center">ETA</th> @endif
-                        @if($columns['ratio']) <th wire:click="setSort('ratio')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition text-center">Ratio</th> @endif
-                        @if($columns['tracker']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Tracker</th> @endif
+                        @if($columns['ratio']) <th wire:click="setSort('ratio')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition text-center">{{ __('messages.ratio') }}</th> @endif
+                        @if($columns['tracker']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{{ __('messages.tracker') }}</th> @endif
                         @if($columns['added']) 
                             <th wire:click="setSort('added_on')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition text-right">
-                                Ajouté @if($sortBy === 'added_on') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
+                                {{ __('messages.added') }} @if($sortBy === 'added_on') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
                             </th> 
                         @endif
-                        <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
+                        <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">{{ __('messages.actions') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -285,9 +285,9 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
                             @if($columns['name'])
                                 <td class="px-6 py-4">
                                     <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate max-w-xs" title="{{ $torrent['name'] ?? '' }}">
-                                        {{ $torrent['name'] ?? 'Inconnu' }}
+                                        {{ $torrent['name'] ?? __('messages.unknown') }}
                                     </div>
-                                    <div class="text-[10px] text-zinc-400 mt-0.5 uppercase tracking-tighter">{{ $torrent['category'] ?: 'Sans catégorie' }}</div>
+                                    <div class="text-[10px] text-zinc-400 mt-0.5 uppercase tracking-tighter">{{ $torrent['category'] ?: __('messages.no_category') }}</div>
                                 </td>
                             @endif
                             @if($columns['size'])
@@ -363,8 +363,8 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
                             <td colspan="12" class="px-6 py-12 text-center text-zinc-500">
                                 <div class="flex flex-col items-center">
                                     <svg class="w-12 h-12 text-zinc-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                                    <p class="text-lg font-medium text-zinc-900 dark:text-zinc-100 uppercase tracking-tight">Aucun torrent trouvé</p>
-                                    <p class="text-sm">Essayez d'ajuster vos filtres.</p>
+                                    <p class="text-lg font-medium text-zinc-900 dark:text-zinc-100 uppercase tracking-tight">{{ __('messages.no_torrents_found') }}</p>
+                                    <p class="text-sm">{{ __('messages.adjust_filters') }}</p>
                                 </div>
                             </td>
                         </tr>
@@ -389,21 +389,21 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
                     <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                 </div>
                 <div>
-                    <h3 class="text-xl font-black text-zinc-900 dark:text-white uppercase tracking-tight">Confirmer</h3>
-                    <p class="text-xs text-zinc-500 font-bold uppercase tracking-widest">Action Destructive</p>
+                    <h3 class="text-xl font-black text-zinc-900 dark:text-white uppercase tracking-tight">{{ __('messages.confirm_delete_title') }}</h3>
+                    <p class="text-xs text-zinc-500 font-bold uppercase tracking-widest">{{ __('messages.confirm_delete_subtitle') }}</p>
                 </div>
             </div>
             
             <p class="text-sm text-zinc-500 dark:text-zinc-400 mb-8 leading-relaxed font-medium">
-                Êtes-vous sûr de vouloir supprimer ce torrent ? Cette action peut inclure la suppression des fichiers sur le disque.
+                {{ __('messages.confirm_delete_description') }}
             </p>
 
             <div class="flex gap-3">
                 <button @click="confirmingDeletion = null" class="flex-1 px-4 py-3 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold rounded-2xl transition hover:bg-zinc-200 dark:hover:bg-zinc-700 cursor-pointer">
-                    Annuler
+                    {{ __('messages.cancel') }}
                 </button>
                 <button wire:click="deleteTorrent" class="flex-1 px-4 py-3 bg-red-500 text-white font-bold rounded-2xl transition hover:bg-red-600 shadow-xl shadow-red-500/20 cursor-pointer">
-                    Supprimer
+                    {{ __('messages.delete') }}
                 </button>
             </div>
         </div>
