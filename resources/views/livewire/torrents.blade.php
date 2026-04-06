@@ -48,7 +48,13 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
     public function refreshTorrents(MediaStackService $service)
     {
         $data = $service->getQbitData();
-        $this->torrents = $data['torrents'] ?? [];
+        $rawTorrents = $data['torrents'] ?? [];
+        
+        // Inject the hash (the associative key) into each torrent object
+        $this->torrents = collect($rawTorrents)->map(function($t, $hash) {
+            $t['hash'] = $hash ?: ($t['infohash_v1'] ?? ($t['infohash_v2'] ?? ''));
+            return $t;
+        })->all();
     }
 
     public function getFilteredTorrentsProperty()
@@ -102,6 +108,7 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
     {
         if ($service->performQbitAction('pause', $hash)) {
             $this->dispatch('toast', message: "Torrent mis en pause.", type: 'success');
+            usleep(250000); // Wait 250ms for qBit to update state
             $this->refreshTorrents($service);
         } else {
             $this->dispatch('toast', message: "Erreur lors de la mise en pause. Vérifiez les logs.", type: 'error');
@@ -112,6 +119,7 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
     {
         if ($service->performQbitAction('resume', $hash)) {
             $this->dispatch('toast', message: "Torrent repris.", type: 'success');
+            usleep(250000); // Wait 250ms for qBit to update state
             $this->refreshTorrents($service);
         } else {
             $this->dispatch('toast', message: "Erreur lors de la reprise. Vérifiez les logs.", type: 'error');
@@ -125,6 +133,7 @@ new #[Layout('components.layouts.app')] #[Title('Torrents')] class extends Compo
         if ($service->performQbitAction('delete', $this->confirmingDeletion)) {
             $this->dispatch('toast', message: "Torrent supprimé.", type: 'success');
             $this->confirmingDeletion = null;
+            usleep(250000); // Wait 250ms for qBit to update state
             $this->refreshTorrents($service);
         } else {
             $this->dispatch('toast', message: "Erreur lors de la suppression. Vérifiez les logs.", type: 'error');

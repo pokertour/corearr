@@ -97,19 +97,57 @@ CoreArr is built with the latest technologies to ensure maximum performance and 
    php artisan serve
    ```
 
-### 🐳 Docker (Recommended)
-CoreArr is optimized for **FrankenPHP**. More details on Docker deployment can be found in the `docker-compose.yml` (if provided) or by using Laravel Sail:
+### 🐳 Docker Deployment (Recommended)
+
+CoreArr is built for performance with **FrankenPHP** and **Laravel Octane**. The easiest way to deploy is using Docker and the provided `docker-compose.yml`.
+
+#### 1. Setup with Docker Compose
+The project includes a production-ready `docker-compose.yml` that handles both the application (mapped to port 8080) and a Redis instance for caching.
+
 ```bash
-./vendor/bin/sail up -d
+# Create and enter the directory
+mkdir corearr && cd corearr
+
+# Download the configuration
+wget https://raw.githubusercontent.com/pokertour/corearr/main/docker-compose.yml
+
+# Create your environment file
+touch .env # Then edit with your specific configuration
+
+# Launch the stack
+docker compose up -d
 ```
+
+#### 2. Image Registry (GHCR)
+A pre-built, optimized image is available on the **GitHub Container Registry**:
+
+```yaml
+image: ghcr.io/pokertour/corearr:latest
+```
+
+*Note: Pushing a version tag (e.g., `v1.0.0`) to GitHub automatically triggers a build and push to GHCR via GitHub Actions.*
+
+#### 3. Persistence
+Make sure to map the following volumes to ensure your configuration and database are persistent:
+- `./storage`: Application logs and cache.
+- `./database/database.sqlite`: Your core database file.
 
 ---
 
 ## 📸 Screenshots
-*(Add your screenshots here to show off the premium UI)*
 
 <div align="center">
-  <img src="https://via.placeholder.com/800x450?text=CoreArr+Dashboard+Preview" alt="Dashboard Preview" />
+  <p><b>Tableau de Bord & Activité</b></p>
+  <img src="screenshots/dashboard.png" width="800" alt="Dashboard CoreArr">
+  <br /><br />
+  <p><b>Gestion des Téléchargements & Clients</b></p>
+  <img src="screenshots/dl.png" width="800" alt="Torrents CoreArr">
+  <br /><br />
+  <p><b>Bibliothèques de Médias & Indexeurs</b></p>
+  <div style="display: flex; gap: 10px; justify-content: center;">
+    <img src="screenshots/medias.png" width="395" alt="Bibliothèque">
+    <img src="screenshots/index.png" width="395" alt="Indexeurs">
+  </div>
 </div>
 
 ---

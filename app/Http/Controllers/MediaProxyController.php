@@ -41,8 +41,6 @@ class MediaProxyController extends Controller
         }
 
         try {
-            Log::info("Proxying image: $targetUrl");
-            
             $response = Http::withHeaders([
                 'X-Api-Key' => $settings->api_key,
             ])->withOptions([

@@ -18,7 +18,10 @@ new #[Lazy] class extends Component {
     public function loadData(MediaStackService $service)
     {
         $data = $service->getQbitData();
-        $this->torrents = array_slice($data['torrents'] ?? [], 0, 5);
+        $this->torrents = collect($data['torrents'] ?? [])
+            ->sortByDesc('added_on')
+            ->take(5)
+            ->all();
         $this->stats = $data['server_state'] ?? [];
     }
 
@@ -46,13 +49,13 @@ new #[Lazy] class extends Component {
 
 ?>
 
-<div wire:init="loadData" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm overflow-hidden h-full">
+<div wire:init="loadData" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm overflow-hidden h-full text-zinc-900 dark:text-zinc-100">
     <div class="flex items-center justify-between mb-6">
         <div class="flex items-center gap-3">
             <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
             </div>
-            <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Téléchargements</h3>
+            <h3 class="text-lg font-semibold">Téléchargements</h3>
         </div>
         
         @if($isConfigured && !empty($stats))
@@ -80,11 +83,28 @@ new #[Lazy] class extends Component {
             @foreach($torrents as $hash => $torrent)
                 <div class="p-3 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-100 dark:border-zinc-800/50 hover:border-blue-500/30 transition">
                     <div class="flex justify-between items-start mb-2">
-                        <p class="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate flex-1 min-w-0 pr-4" title="{{ $torrent['name'] }}">
-                            {{ $torrent['name'] }}
-                        </p>
-                        <span class="text-[10px] text-zinc-500 shrink-0 font-mono">
-                            {{ $this->formatSize($torrent['dlspeed'] ?? 0) }}/s
+                        <div class="min-w-0 pr-4">
+                            <p class="text-xs font-semibold truncate" title="{{ $torrent['name'] }}">
+                                {{ $torrent['name'] }}
+                            </p>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">
+                                    Ratio: {{ round($torrent['ratio'] ?? 0, 2) }}
+                                </span>
+                                @if(($torrent['upspeed'] ?? 0) > 0)
+                                    <span class="w-0.5 h-0.5 bg-zinc-300 dark:bg-zinc-700 rounded-full"></span>
+                                    <span class="text-[9px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-tighter">
+                                        UP: {{ $this->formatSize($torrent['upspeed']) }}/s
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
+                        <span class="text-[10px] text-blue-600 dark:text-blue-400 font-black italic shrink-0">
+                            @if(($torrent['dlspeed'] ?? 0) > 0)
+                                {{ $this->formatSize($torrent['dlspeed']) }}/s
+                            @else
+                                --
+                            @endif
                         </span>
                     </div>
                     <div class="flex items-center gap-3">

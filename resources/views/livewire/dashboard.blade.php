@@ -67,7 +67,7 @@ new #[Layout('components.layouts.app')] #[Title('Dashboard')] class extends Comp
 
     <!-- Stats Overview Cards (Conditional) -->
     @if($qbitConfigured)
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             @foreach([
                 ['label' => 'Downloads', 'value' => $stats['count'], 'icon' => 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4', 'color' => 'blue'],
                 ['label' => 'Vitesse Download', 'value' => $this->formatSize($stats['dl_speed']) . '/s', 'icon' => 'M13 10V3L4 14h7v7l9-11h-7z', 'color' => 'yellow'],
@@ -93,7 +93,7 @@ new #[Layout('components.layouts.app')] #[Title('Dashboard')] class extends Comp
     @endif
 
     <!-- Arr System Cards (Unified Design) -->
-    <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         @foreach(['radarr' => ['label' => 'Films', 'color' => 'indigo', 'icon' => 'M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z'], 
                   'sonarr' => ['label' => 'Séries', 'color' => 'yellow', 'icon' => 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z'],
                   'prowlarr' => ['label' => 'Indexeurs', 'color' => 'pink', 'icon' => 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z']] as $id => $cfg)

@@ -1,0 +1,25 @@
+services:
+  app:
+    image: ghcr.io/pokertour/corearr:latest
+    container_name: corearr-app
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./storage:/var/www/html/storage
+      - ./database/database.sqlite:/var/www/html/database/database.sqlite
+
+  redis:
+    image: redis:alpine
+    container_name: deepsky-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

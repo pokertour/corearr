@@ -452,11 +452,11 @@ class MediaStackService
         ]);
 
         if ($authResponse->successful()) {
-            $cookieHeader = $authResponse->header('Set-Cookie');
-            // Extract the SID from the Set-Cookie header
-            preg_match('/SID=([^;]+)/', $cookieHeader, $matches);
-            $sid = $matches[1] ?? null;
-            if (!$sid) return false;
+            $cookie = $authResponse->header('Set-Cookie');
+            if (!$cookie) {
+                \Illuminate\Support\Facades\Log::warning("qBittorrent: Aucun cookie SID trouvé dans la réponse de login.");
+                return false;
+            }
 
             $endpoint = match($action) {
                 'pause' => '/api/v2/torrents/pause',
@@ -467,17 +467,23 @@ class MediaStackService
             
             if (!$endpoint) return false;
 
+            if (empty($hash)) {
+                \Illuminate\Support\Facades\Log::warning("qBittorrent: Tentative d'action ($action) sans hash de torrent.");
+                return false;
+            }
+
             $payload = ['hashes' => $hash];
             if ($action === 'delete') $payload['deleteFiles'] = 'true';
 
+            // First attempt with legacy/standard endpoint
             $res = Http::withHeaders([
-                'Cookie' => "SID=$sid",
+                'Cookie' => $cookie,
                 'Referer' => $url,
                 'Origin' => $url,
             ])->asForm()->post($url . $endpoint, $payload);
             
             // Handle qBittorrent v5.0+ where pause/resume are stop/start
-            if ($res->status() === 404) {
+            if ($res->status() === 404 && in_array($action, ['pause', 'resume'])) {
                 $altEndpoint = match($action) {
                     'pause' => '/api/v2/torrents/stop',
                     'resume' => '/api/v2/torrents/start',
@@ -486,7 +492,7 @@ class MediaStackService
 
                 if ($altEndpoint) {
                     $res = Http::withHeaders([
-                        'Cookie' => "SID=$sid",
+                        'Cookie' => $cookie,
                         'Referer' => $url,
                         'Origin' => $url,
                     ])->asForm()->post($url . $altEndpoint, $payload);
@@ -494,7 +500,7 @@ class MediaStackService
             }
             
             if (!$res->successful()) {
-                \Illuminate\Support\Facades\Log::error("qBittorrent Action Failed: " . $res->status() . " - " . $res->body());
+                \Illuminate\Support\Facades\Log::error("qBittorrent Action Failed ($action): " . $res->status() . " - " . $res->body());
                 return false;
             }
 
