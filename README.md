@@ -76,6 +76,7 @@ mkdir corearr && cd corearr
 # Download the configuration
 wget https://raw.githubusercontent.com/pokertour/corearr/main/docker-compose.yml
 
+
 ```
 
 Your `.env` file must contain these essential variables:

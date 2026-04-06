@@ -7,9 +7,17 @@ chmod -R 775 /var/www/html/storage /var/www/html/database
 chmod -R 775 /var/www/html/bootstrap/cache 2>/dev/null || true
 
 # Création de la DB si absente
-if [ ! -f /var/www/html/database/database.sqlite ]; then
-    touch /var/www/html/database/database.sqlite
-    chown www-data:www-data /var/www/html/database/database.sqlite
+DB_PATH="/var/www/html/database/database.sqlite"
+
+# Sécurité : Si c'est un dossier (erreur de montage Docker fréquent), on le supprime
+if [ -d "$DB_PATH" ]; then
+    echo "⚠️  $DB_PATH est un dossier (erreur Docker), correction..."
+    rm -rf "$DB_PATH"
+fi
+
+if [ ! -f "$DB_PATH" ]; then
+    touch "$DB_PATH"
+    chown www-data:www-data "$DB_PATH"
 fi
 
 # Routine Laravel (migrations toujours nécessaires)
