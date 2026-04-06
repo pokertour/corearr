@@ -68,6 +68,7 @@ CoreArr is built for performance with **FrankenPHP** and **Laravel Octane**. The
 #### 1. Setup with Docker Compose
 The project includes a production-ready `docker-compose.yml` that handles both the application (mapped to port 8080) and a Redis instance for caching.
 
+#### 2. Environment Configuration (.env)
 ```bash
 # Create and enter the directory
 mkdir corearr && cd corearr
@@ -75,21 +76,32 @@ mkdir corearr && cd corearr
 # Download the configuration
 wget https://raw.githubusercontent.com/pokertour/corearr/main/docker-compose.yml
 
-# Create your environment file
-touch .env # Then edit with your specific configuration
+```
 
+Your `.env` file must contain these essential variables:
+
+- **`APP_KEY`**: Your application encryption key. You can generate one using [Laravel Key Generator](https://laravel-encryption-key-generator.vercel.app).
+- **`APP_URL`**: The full URL where CoreArr is accessible (e.g., `https://corearr.yourdomain.com`).
+- **SMTP (Optional)**: If you want to receive email notifications or use the "Forgot Password" feature:
+  - `MAIL_MAILER=smtp`
+  - `MAIL_HOST=smtp.gmail.com`
+  - `MAIL_PORT=587`
+  - `MAIL_USERNAME=your-email@gmail.com`
+  - `MAIL_PASSWORD=your-app-password`
+  - `MAIL_ENCRYPTION=tls`
+  - `MAIL_FROM_ADDRESS="noreply@yourdomain.com"`
+```bash
 # Launch the stack
 docker compose up -d
 ```
-
-#### 2. Image Registry (GHCR)
+#### 3. Image Registry (GHCR)
 A pre-built, optimized image is available on the **GitHub Container Registry**:
 
 ```yaml
 image: ghcr.io/pokertour/corearr:latest
 ```
 
-#### 3. Persistence
+#### 4. Persistence
 Make sure to map the following volumes to ensure your configuration and database are persistent:
 - `./storage`: Application logs and cache.
 - `./database/database.sqlite`: Your core database file.
