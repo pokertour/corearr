@@ -1,0 +1,21 @@
+{
+    "name": "CoreArr Command Center",
+    "short_name": "CoreArr",
+    "start_url": "/dashboard",
+    "display": "standalone",
+    "background_color": "#000000",
+    "theme_color": "#0284C7",
+    "description": "Pilote unifié pour Sonarr, Radarr, Prowlarr et qBittorrent.",
+    "icons": [
+        {
+            "src": "/assets/logo/logo-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/assets/logo/logo-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

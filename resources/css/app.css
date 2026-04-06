@@ -1,0 +1,59 @@
+@import 'tailwindcss';
+@import '../../vendor/livewire/flux/dist/flux.css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../vendor/livewire/flux-pro/stubs/**/*.blade.php';
+@source '../../vendor/livewire/flux/stubs/**/*.blade.php';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+    --font-display: "Inter", ui-sans-serif, system-ui;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+    /* Couleurs de marque (Brand) */
+    --color-brand-blue: #0284C7;
+    --color-brand-teal: #2DD4BF;
+    --color-brand-blue-neon: #38BDF8;
+    --color-brand-teal-neon: #4FD1C5;
+
+    /* Palette sémantique CoreArr — Mode Light */
+    --color-core-bg: #EFF6FF;       /* Bleu très doux, aéré */
+    --color-core-card: #FFFFFF;
+    --color-core-text: #0F172A;     /* Slate 950 — meilleur contraste */
+    --color-core-primary: var(--color-brand-blue);
+    --color-core-secondary: var(--color-brand-teal);
+
+    @keyframes shrink {
+        from { width: 100%; }
+        to { width: 0%; }
+    }
+}
+
+@layer base {
+    :root {
+        /* Variables CSS brutes pour usage direct (sidebar, etc.) */
+        --sidebar-bg: #E0EFFE;
+    }
+
+    /* Mode Sombre */
+    .dark, :root:where(.dark) {
+        --color-core-bg: #000000;
+        --color-core-card: #111827;
+        --color-core-text: #F3F4F6;
+        --color-core-primary: var(--color-brand-blue-neon);
+        --color-core-secondary: var(--color-brand-teal-neon);
+        --sidebar-bg: #000000;
+    }
+
+    body {
+        color: var(--color-core-text);
+        background-color: var(--color-core-bg);
+    }
+
+    @keyframes shrink {
+        from { width: 100%; }
+        to { width: 0%; }
+    }
+}

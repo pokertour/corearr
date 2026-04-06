@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <defs>
+    <!-- Dégradé basé sur la configuration Tailwind (Primary Light vers Secondary Light) -->
+    <linearGradient id="corearrGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#2DD4BF" />
+    </linearGradient>
+    
+    <!-- Dégradé inversé pour l'anneau central -->
+    <linearGradient id="corearrGradCircle" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#2DD4BF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rotation de 45 degrés pour aligner les flèches sur les diagonales -->
+  <g transform="rotate(45 100 100)">
+    
+    <!-- Flèche 1 (Haut pointant vers le centre) -->
+    <path d="M 100 70 L 86 34 L 94 38 L 94 12 A 6 6 0 0 1 106 12 L 106 38 L 114 34 Z" fill="url(#corearrGrad)" />
+    
+    <!-- Flèche 2 (Droite pointant vers le centre) -->
+    <path d="M 100 70 L 86 34 L 94 38 L 94 12 A 6 6 0 0 1 106 12 L 106 38 L 114 34 Z" fill="url(#corearrGrad)" transform="rotate(90 100 100)" />
+    
+    <!-- Flèche 3 (Bas pointant vers le centre) -->
+    <path d="M 100 70 L 86 34 L 94 38 L 94 12 A 6 6 0 0 1 106 12 L 106 38 L 114 34 Z" fill="url(#corearrGrad)" transform="rotate(180 100 100)" />
+    
+    <!-- Flèche 4 (Gauche pointant vers le centre) -->
+    <path d="M 100 70 L 86 34 L 94 38 L 94 12 A 6 6 0 0 1 106 12 L 106 38 L 114 34 Z" fill="url(#corearrGrad)" transform="rotate(270 100 100)" />
+    
+  </g>
+
+  <!-- Anneau central -->
+  <circle cx="100" cy="100" r="16" fill="none" stroke="url(#corearrGradCircle)" stroke-width="6" />
+</svg>
