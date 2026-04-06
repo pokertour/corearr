@@ -1,13 +1,23 @@
-# --- Étape 1 : Compilation des Assets (Node) ---
+# --- Étape 1 : Dépendances PHP (Composer) ---
+FROM composer:latest AS php-builder
+WORKDIR /app
+COPY composer.* ./
+# Installation sans scripts pour éviter les erreurs liées aux dossiers manquants
+RUN composer install --no-dev --no-scripts --no-autoloader --ignore-platform-reqs
+COPY . .
+RUN composer dump-autoload --optimize --no-dev
+
+# --- Étape 2 : Compilation des Assets (Node) ---
 FROM node:22-alpine AS assets-builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-# Tailwind 4 build
+# On récupère le dossier vendor pour que Tailwind 4 trouve flux.css
+COPY --from=php-builder /app/vendor ./vendor
 RUN npm run build
 
-# --- Étape 2 : L'application Octane + FrankenPHP 8.5 ---
+# --- Étape 3 : L'image finale (Octane + FrankenPHP 8.5) ---
 FROM dunglas/frankenphp:1-php8.5-alpine
 
 # Configuration globale pour Octane et Redis (Baked-in)
@@ -57,12 +67,10 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Copie du code et des assets compilés
+# Copie du code, vendor et assets
 COPY . .
+COPY --from=php-builder /app/vendor ./vendor
 COPY --from=assets-builder /app/public/build ./public/build
-
-# Installation propre des dépendances
-RUN composer install --no-dev --optimize-autoloader
 
 # On prépare les dossiers pour les volumes et Caddy
 RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views database /config/caddy /data/caddy \
@@ -71,4 +79,4 @@ RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framewor
 # FrankenPHP utilise le port 80 par défaut
 EXPOSE 80
 
-ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT ["entrypoint.sh"]
