@@ -3,8 +3,10 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
@@ -14,21 +16,24 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         if (User::count() === 0) {
-            $password = \Illuminate\Support\Str::password(16, true, true, false, false);
+            // Génération d'un mot de passe aléatoire de 16 caractères
+            $password = Str::password(16, true, true, false, false);
             
-            User::factory()->create([
+            User::create([
                 'name' => 'Admin',
                 'email' => 'admin@corearr.local',
-                'password' => \Illuminate\Support\Facades\Hash::make($password),
+                'password' => Hash::make($password),
+                'email_verified_at' => now(),
             ]);
 
             $message = "🔐 CoreArr : Premier déploiement. Utilisateur admin@corearr.local créé avec le mot de passe : {$password}";
             
-            \Illuminate\Support\Facades\Log::info($message);
+            // Log dans le fichier ET console Docker
+            Log::info($message);
             
             if ($this->command) {
                 $this->command->info($message);
-                $this->command->warn("Veuillez conserver ce mot de passe ou le modifier via l'interface profil.");
+                $this->command->warn("Veuillez noter ce mot de passe !! Il est également disponible dans les logs du container.");
             }
         }
     }

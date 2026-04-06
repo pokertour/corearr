@@ -76,7 +76,8 @@ mkdir corearr && cd corearr
 # Download the configuration
 wget https://raw.githubusercontent.com/pokertour/corearr/main/docker-compose.yml
 
-
+mkdir database
+touch database/database.sqlite
 ```
 
 Your `.env` file must contain these essential variables:

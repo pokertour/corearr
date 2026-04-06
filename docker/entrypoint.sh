@@ -22,6 +22,7 @@ fi
 
 # Routine Laravel (migrations toujours nécessaires)
 php artisan migrate --force
+php artisan db:seed --force
 php artisan storage:link --force
 
 # Optimisations (seulement en production pour ne pas bloquer le dev)
