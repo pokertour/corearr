@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Session;
 use Laravel\Fortify\Actions\EnableTwoFactorAuthentication;
 use Laravel\Fortify\Actions\DisableTwoFactorAuthentication;
+use Laravel\Fortify\Actions\ConfirmTwoFactorAuthentication;
 use Laravel\Fortify\Features;
 
 new #[Layout('components.layouts.app')] #[Title('messages.profile')] class extends Component {
@@ -20,6 +21,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.profile')] class exten
     
     // Auth related
     public bool $showQrcode = false;
+    public string $twoFactorCode = '';
 
     public function mount()
     {
@@ -72,7 +74,18 @@ new #[Layout('components.layouts.app')] #[Title('messages.profile')] class exten
     {
         $enable(auth()->user());
         $this->showQrcode = true;
-        $this->dispatch('notify', title: __('messages.2fa_enabled'), type: 'success');
+    }
+
+    public function confirmTwoFactor(ConfirmTwoFactorAuthentication $confirm)
+    {
+        $this->validate([
+            'twoFactorCode' => 'required|string',
+        ]);
+
+        $confirm(auth()->user(), $this->twoFactorCode);
+
+        $this->twoFactorCode = '';
+        $this->dispatch('notify', title: __('messages.2fa_confirmed'), type: 'success');
     }
 
     public function disableTwoFactor(DisableTwoFactorAuthentication $disable)
@@ -160,23 +173,53 @@ new #[Layout('components.layouts.app')] #[Title('messages.profile')] class exten
                     <button wire:click="enableTwoFactor" class="cursor-pointer px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-medium rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-100 transition shadow-sm">
                         {{ __('messages.enable_2fa') }}
                     </button>
-                @else
-                    @if($showQrcode)
-                        <div class="mb-6 p-4 bg-white rounded-xl inline-block shadow-sm">
+                @elseif(!auth()->user()->two_factor_confirmed_at)
+                    <div class="space-y-6">
+                        <p class="text-sm text-yellow-600 dark:text-yellow-400 font-medium">
+                            {{ __('messages.2fa_not_confirmed') }}
+                        </p>
+                        
+                        <div class="p-4 bg-white rounded-xl inline-block shadow-sm">
                             {!! auth()->user()->twoFactorQrCodeSvg() !!}
                         </div>
+
+                        <div class="max-w-xs">
+                            <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">{{ __('messages.2fa_enter_code') }}</label>
+                            <div class="flex gap-2">
+                                <input type="text" wire:model="twoFactorCode" placeholder="XXXXXX" class="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2 text-zinc-900 dark:text-white focus:ring-2 focus:ring-core-primary outline-none transition" />
+                                <button wire:click="confirmTwoFactor" class="cursor-pointer px-4 py-2 bg-core-primary text-white text-sm font-medium rounded-lg hover:bg-core-primary/90 transition shadow-md shadow-core-primary/20">
+                                    {{ __('messages.2fa_confirm_button') }}
+                                </button>
+                            </div>
+                            @error('twoFactorCode') <span class="text-xs text-red-500 mt-1 block">{{ $message }}</span> @enderror
+                        </div>
+                    </div>
+                @else
+                    <div class="space-y-6">
+                        <div class="flex items-center gap-2 text-green-600 dark:text-green-400">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="text-sm font-medium">{{ __('messages.2fa_enabled') }}</span>
+                        </div>
+
+                        @if($showQrcode)
+                            <div class="mb-6 p-4 bg-white rounded-xl inline-block shadow-sm">
+                                {!! auth()->user()->twoFactorQrCodeSvg() !!}
+                            </div>
+                        @endif
+
                         <div class="mb-6">
                             <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">{{ __('messages.recovery_codes') }}</p>
-                            <div class="bg-zinc-100 dark:bg-zinc-950 p-4 rounded-lg font-mono text-sm text-zinc-600 dark:text-zinc-400">
+                            <div class="bg-zinc-100 dark:bg-zinc-950 p-4 rounded-lg font-mono text-sm text-zinc-600 dark:text-zinc-400 grid grid-cols-2 gap-2">
                                 @foreach((array) auth()->user()->recoveryCodes() as $code)
                                     <div>{{ $code }}</div>
                                 @endforeach
                             </div>
                         </div>
-                    @endif
-                    <button wire:click="disableTwoFactor" class="cursor-pointer px-4 py-2 bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/20 transition">
-                        {{ __('messages.disable_2fa') }}
-                    </button>
+
+                        <button wire:click="disableTwoFactor" class="cursor-pointer px-4 py-2 bg-red-500/10 text-red-600 dark:text-red-400 text-sm font-medium rounded-lg hover:bg-red-500/20 transition">
+                            {{ __('messages.disable_2fa') }}
+                        </button>
+                    </div>
                 @endif
             </div>
         </div>

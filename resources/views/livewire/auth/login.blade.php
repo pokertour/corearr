@@ -2,6 +2,8 @@
 
 use Livewire\Component;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use App\Models\User;
 
 new class extends Component {
     public string $email = '';
@@ -10,12 +12,24 @@ new class extends Component {
 
     public function login()
     {
-        $credentials = $this->validate([
+        $this->validate([
             'email' => ['required', 'email'],
             'password' => ['required'],
         ]);
 
-        if (Auth::attempt($credentials, $this->remember)) {
+        $user = User::where('email', $this->email)->first();
+
+        if ($user && Hash::check($this->password, $user->password)) {
+            // Check if 2FA is enabled AND confirmed
+            if ($user->two_factor_secret && $user->two_factor_confirmed_at) {
+                session()->put('login.id', $user->id);
+                session()->put('login.remember', $this->remember);
+
+                return redirect()->route('two-factor.login');
+            }
+
+            // Standard login
+            Auth::login($user, $this->remember);
             session()->regenerate();
 
             return redirect()->intended('/dashboard');
