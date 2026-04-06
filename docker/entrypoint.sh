@@ -1,8 +1,10 @@
 #!/bin/sh
 
-# Correction des droits pour SQLite et les uploads
+# Correction des droits pour SQLite et les uploads (nécessaire pour les volumes montés)
 mkdir -p storage/framework/views storage/framework/cache/data storage/framework/sessions storage/logs
-chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+chown -R www-data:www-data /var/www/html/storage /var/www/html/database
+chmod -R 775 /var/www/html/storage /var/www/html/database
+chmod -R 775 /var/www/html/bootstrap/cache 2>/dev/null || true
 
 # Création de la DB si absente
 if [ ! -f /var/www/html/database/database.sqlite ]; then
