@@ -47,13 +47,6 @@ RUN install-php-extensions \
     pcntl \
     posix
 
-# Optimisations PHP 8.5 (JIT)
-RUN echo "upload_max_filesize=12M" > /usr/local/etc/php/conf.d/prod.ini && \
-    echo "post_max_size=12M" >> /usr/local/etc/php/conf.d/prod.ini && \
-    echo "memory_limit=512M" >> /usr/local/etc/php/conf.d/prod.ini && \
-    echo "opcache.enable_cli=1" >> /usr/local/etc/php/conf.d/prod.ini && \
-    echo "opcache.jit=tracing" >> /usr/local/etc/php/conf.d/prod.ini
-
 
 # Config Supervisor
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -72,10 +65,12 @@ COPY . .
 COPY --from=php-builder /app/vendor ./vendor
 COPY --from=assets-builder /app/public/build ./public/build
 
-# On prépare les dossiers pour les volumes et Caddy
+# Ensure storage directories exist and set permissions
 RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views database /config/caddy /data/caddy \
     && chown -R www-data:www-data /var/www/html /config /data
 
+ENV APP_ENV="production"
+ENV APP_DEBUG="false"
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 
