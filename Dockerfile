@@ -76,7 +76,10 @@ COPY --from=assets-builder /app/public/build ./public/build
 RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views database /config/caddy /data/caddy \
     && chown -R www-data:www-data /var/www/html /config /data
 
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 # FrankenPHP utilise le port 80 par défaut
 EXPOSE 80
 
-ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT ["entrypoint.sh"]
