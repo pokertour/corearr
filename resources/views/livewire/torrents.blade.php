@@ -1,14 +1,19 @@
 <?php
 
 use Livewire\Component;
+use Livewire\WithPagination;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use App\Services\MediaStack\MediaStackService;
 use App\Models\ServiceSetting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 
 new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class extends Component {
+    use WithPagination;
+
     public bool $isConfigured = false;
     public array $torrents = [];
     public ?string $confirmingDeletion = null;
@@ -44,6 +49,10 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
             $this->refreshTorrents($service);
         }
     }
+
+    public function updatedSearch() { $this->resetPage(); }
+    public function updatedFilterState() { $this->resetPage(); }
+    public function updatedSortBy() { $this->resetPage(); }
 
     public function refreshTorrents(MediaStackService $service)
     {
@@ -81,7 +90,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
         }
 
         // Sort
-        return $filtered->sortBy(function($t) {
+        $sorted = $filtered->sortBy(function($t) {
             return match($this->sortBy) {
                 'name' => strtolower($t['name'] ?? ''),
                 'size' => $t['size'] ?? 0,
@@ -91,7 +100,19 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                 'ratio' => $t['ratio'] ?? 0,
                 default => $t[$this->sortBy] ?? 0,
             };
-        }, SORT_REGULAR, $this->sortDir === 'desc')->all();
+        }, SORT_REGULAR, $this->sortDir === 'desc');
+
+        // Pagination
+        $perPage = 10;
+        $page = $this->getPage();
+        
+        return new LengthAwarePaginator(
+            $sorted->forPage($page, $perPage)->values(),
+            $sorted->count(),
+            $perPage,
+            $page,
+            ['path' => Paginator::resolveCurrentPath()]
+        );
     }
 
     public function setSort(string $field)
@@ -229,6 +250,28 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                     <option value="completed">{{ __('messages.completed') }}</option>
                 </select>
 
+                <!-- Sorting (Mobile only) -->
+                <div class="flex items-center gap-2 flex-1 md:hidden">
+                    <select wire:model.live="sortBy" class="flex-1 md:w-32 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+                        <option value="name">{{ __('messages.name') }}</option>
+                        <option value="size">{{ __('messages.size') }}</option>
+                        <option value="progress">{{ __('messages.progress') }}</option>
+                        <option value="added_on">{{ __('messages.added') }}</option>
+                        <option value="speed">{{ __('messages.download_speed') }}</option>
+                        <option value="ratio">{{ __('messages.ratio') }}</option>
+                    </select>
+
+                    <button wire:click="$set('sortDir', '{{ $sortDir === 'asc' ? 'desc' : 'asc' }}')" 
+                            class="p-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-500 hover:text-core-primary hover:border-core-primary transition cursor-pointer"
+                            title="{{ $sortDir === 'asc' ? __('messages.ascending') : __('messages.descending') }}">
+                        @if($sortDir === 'asc')
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/></svg>
+                        @else
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h9m5-1l4 4m0 0l4-4m-4 4V10"/></svg>
+                        @endif
+                    </button>
+                </div>
+
                 <div x-data="{ open: false }" class="relative">
                     <button @click="open = !open" class="cursor-pointer px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
@@ -246,7 +289,8 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
             </div>
         </div>
 
-        <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden overflow-x-auto">
+        <!-- Desktop View: Table -->
+        <div class="hidden md:block bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden overflow-x-auto">
             <table class="w-full text-left border-collapse min-w-[800px]">
                 <thead>
                     <tr class="bg-zinc-50 dark:bg-zinc-800/50">
@@ -371,6 +415,102 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                     @endforelse
                 </tbody>
             </table>
+        </div>
+
+        <div class="hidden md:block mt-6">
+            <flux:pagination :paginator="$this->filteredTorrents" />
+        </div>
+
+        <!-- Mobile View: Cards -->
+        <div class="grid grid-cols-1 gap-4 md:hidden">
+            @forelse($this->filteredTorrents as $torrent)
+                @php $hash = $torrent['hash'] ?? ''; @endphp
+                <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm space-y-4">
+                    <!-- Header: Name & Status -->
+                    <div class="flex justify-between items-start gap-3">
+                        <div class="flex-1">
+                            <h3 class="text-sm font-bold text-zinc-900 dark:text-white leading-tight break-all">
+                                {{ $torrent['name'] ?? __('messages.unknown') }}
+                            </h3>
+                            <div class="text-[10px] text-zinc-400 mt-1 uppercase tracking-tighter">
+                                {{ $torrent['category'] ?: __('messages.no_category') }}
+                            </div>
+                        </div>
+                        <div class="shrink-0">
+                            <span class="px-2 py-0.5 text-[9px] font-black rounded-lg uppercase tracking-widest border
+                                {{ str_contains($torrent['state'], 'download') ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' : 
+                                   (str_contains($torrent['state'], 'pause') || str_contains($torrent['state'], 'stop') ? 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800/40 dark:text-zinc-400 dark:border-zinc-700' : 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800') }}">
+                                {{ str_replace('_', ' ', $torrent['state']) }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between text-[11px] font-bold text-zinc-500 uppercase tracking-tighter">
+                            <span>{{ __('messages.progress') }}</span>
+                            <span>{{ round(($torrent['progress'] ?? 0) * 100, 1) }}%</span>
+                        </div>
+                        <div class="h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                            <div class="h-full bg-core-primary rounded-full transition-all duration-500" style="width: {{ ($torrent['progress'] ?? 0) * 100 }}%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Stats Grid -->
+                    <div class="grid grid-cols-2 gap-4 py-2 border-t border-b border-zinc-100 dark:border-zinc-800/50">
+                        <div class="space-y-0.5">
+                            <span class="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{{ __('messages.size') }}</span>
+                            <div class="text-xs font-bold text-zinc-700 dark:text-white">{{ $this->formatSize($torrent['size'] ?? 0) }}</div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <span class="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">ETA</span>
+                            <div class="text-xs font-bold text-zinc-700 dark:text-white uppercase">{{ $this->formatEta($torrent['eta'] ?? -1) }}</div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <span class="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{{ __('messages.download_speed') }}</span>
+                            <div class="text-xs font-bold text-blue-500">↓ {{ $this->formatSpeed($torrent['dlspeed'] ?? 0) }}</div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <span class="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{{ __('messages.upload_speed') }}</span>
+                            <div class="text-xs font-bold text-teal-500">↑ {{ $this->formatSpeed($torrent['upspeed'] ?? 0) }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter mr-2">{{ __('messages.ratio') }}: {{ round($torrent['ratio'] ?? 0, 2) }}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                             @if(str_contains($torrent['state'], 'pause') || str_contains($torrent['state'], 'stop'))
+                                <button wire:click="resumeTorrent('{{ $hash }}')" class="p-2.5 bg-green-500/10 text-green-600 rounded-xl active:bg-green-500 active:text-white transition">
+                                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                </button>
+                             @else
+                                <button wire:click="pauseTorrent('{{ $hash }}')" class="p-2.5 bg-yellow-500/10 text-yellow-600 rounded-xl active:bg-yellow-500 active:text-white transition">
+                                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                </button>
+                             @endif
+                             <button wire:click="confirmDelete('{{ $hash }}')" 
+                                     class="p-2.5 bg-red-500/10 text-red-600 rounded-xl active:bg-red-500 active:text-white transition">
+                                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                             </button>
+                        </div>
+                    </div>
+                </div>
+            @empty
+                <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-10 text-center text-zinc-500">
+                    <div class="flex flex-col items-center">
+                        <svg class="w-12 h-12 text-zinc-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        <p class="text-lg font-medium text-zinc-900 dark:text-zinc-100 uppercase tracking-tight">{{ __('messages.no_torrents_found') }}</p>
+                        <p class="text-sm">{{ __('messages.adjust_filters') }}</p>
+                    </div>
+                </div>
+            @endforelse
+        </div>
+
+        <div class="md:hidden mt-6">
+            <flux:pagination :paginator="$this->filteredTorrents" />
         </div>
     @endif
 
