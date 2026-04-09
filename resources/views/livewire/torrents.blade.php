@@ -241,8 +241,8 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                        class="w-full pl-10 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-core-primary outline-none transition">
             </div>
 
-            <div class="flex items-center gap-4">
-                <select wire:model.live="filterState" class="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+            <div class="flex flex-wrap items-center gap-2 sm:gap-4 w-full md:w-auto">
+                <select wire:model.live="filterState" class="flex-1 sm:flex-none bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
                     <option value="all">{{ __('messages.all_statuses') }}</option>
                     <option value="downloading">{{ __('messages.downloads') }}</option>
                     <option value="paused">{{ __('messages.paused') }}</option>
@@ -251,8 +251,8 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                 </select>
 
                 <!-- Sorting (Mobile only) -->
-                <div class="flex items-center gap-2 flex-1 md:hidden">
-                    <select wire:model.live="sortBy" class="flex-1 md:w-32 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+                <div class="flex items-center gap-2 flex-1 min-w-[150px] md:hidden">
+                    <select wire:model.live="sortBy" class="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
                         <option value="name">{{ __('messages.name') }}</option>
                         <option value="size">{{ __('messages.size') }}</option>
                         <option value="progress">{{ __('messages.progress') }}</option>
@@ -272,7 +272,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                     </button>
                 </div>
 
-                <div x-data="{ open: false }" class="relative">
+                <div x-data="{ open: false }" class="relative flex-none ml-auto sm:ml-0">
                     <button @click="open = !open" class="cursor-pointer px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
                         {{ __('messages.columns') }}
