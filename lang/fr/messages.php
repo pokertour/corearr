@@ -170,6 +170,21 @@ return [
     'forgot_password' => 'Mot de passe oublié ?',
     'login_button' => 'Connexion',
 
+    // Cleanup
+    'cleanup' => 'Nettoyage',
+    'cleanup_subtitle' => 'Gérez et supprimez massivement les requêtes média.',
+    'media_server' => 'Serveur Média',
+    'media_server_type' => 'Type de Serveur',
+    'emby' => 'Emby',
+    'jellyfin' => 'Jellyfin',
+    'jellyseerr' => 'Jellyseerr',
+    'active_users' => 'Utilisateurs Actifs',
+    'latest_requests' => 'Dernières Requêtes',
+    'recent_users' => 'Utilisateurs Récents',
+    'bulk_delete' => 'Suppression en masse',
+    'select_all' => 'Tout Sélectionner',
+    'watch_status' => 'Statut de visionnage',
+
     // About
     'about_info' => 'Informations',
     'version' => 'Version',

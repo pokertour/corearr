@@ -2,8 +2,9 @@
 
 namespace App\Services\MediaStack;
 
-use Illuminate\Support\Facades\Http;
 use App\Models\ServiceSetting;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class MediaStackService
 {
@@ -23,19 +24,19 @@ class MediaStackService
 
             if ($services->has('sonarr') && $services->get('sonarr')->base_url) {
                 $poolRequests[] = $pool->as('sonarr')->withHeaders([
-                    'X-Api-Key' => $services->get('sonarr')->api_key
-                ])->get(rtrim($services->get('sonarr')->base_url, '/') . '/api/v3/calendar');
+                    'X-Api-Key' => $services->get('sonarr')->api_key,
+                ])->get(rtrim($services->get('sonarr')->base_url, '/').'/api/v3/calendar');
             }
 
             if ($services->has('radarr') && $services->get('radarr')->base_url) {
                 $poolRequests[] = $pool->as('radarr')->withHeaders([
-                    'X-Api-Key' => $services->get('radarr')->api_key
-                ])->get(rtrim($services->get('radarr')->base_url, '/') . '/api/v3/calendar');
+                    'X-Api-Key' => $services->get('radarr')->api_key,
+                ])->get(rtrim($services->get('radarr')->base_url, '/').'/api/v3/calendar');
             }
 
             if ($services->has('qbittorrent') && $services->get('qbittorrent')->base_url) {
                 // Initial stats check - for telemetry we might use a faster endpoint
-                $poolRequests[] = $pool->as('qbittorrent')->get(rtrim($services->get('qbittorrent')->base_url, '/') . '/api/v2/sync/maindata');
+                $poolRequests[] = $pool->as('qbittorrent')->get(rtrim($services->get('qbittorrent')->base_url, '/').'/api/v2/sync/maindata');
             }
 
             return $poolRequests;
@@ -65,13 +66,15 @@ class MediaStackService
     {
         $url = rtrim($params['base_url'], '/');
         $endpoint = match ($service) {
-            'sonarr', 'radarr' => "/api/v3/system/status",
-            'prowlarr' => "/api/v1/system/status",
-            'qbittorrent' => "/api/v2/app/version",
+            'sonarr', 'radarr' => '/api/v3/system/status',
+            'prowlarr' => '/api/v1/system/status',
+            'qbittorrent' => '/api/v2/app/version',
+            'jellyseerr' => '/api/v1/status',
+            'emby', 'jellyfin' => '/System/Info',
             default => null,
         };
 
-        if (!$endpoint) {
+        if (! $endpoint) {
             return ['success' => false, 'message' => "Service $service non reconnu."];
         }
 
@@ -80,46 +83,55 @@ class MediaStackService
                 return $this->testQbitConnection($url, $params['username'] ?? '', $params['password'] ?? '');
             }
 
-            $response = Http::timeout(5)->withHeaders([
-                'X-Api-Key' => $params['api_key'] ?? '',
-            ])->get($url . $endpoint);
+            // For Emby/Jellyfin
+            if ($service === 'emby' || $service === 'jellyfin') {
+                $response = Http::timeout(5)->withHeaders([
+                    'X-Emby-Token' => $params['api_key'] ?? '',
+                ])->get($url.$endpoint);
+            } else {
+                $response = Http::timeout(5)->withHeaders([
+                    'X-Api-Key' => $params['api_key'] ?? '',
+                ])->get($url.$endpoint);
+            }
 
             if ($response->successful()) {
-                $info = $response->json()['version'] ?? $response->body() ?: 'OK';
+                $jsonData = $response->json();
+                $info = $jsonData['version'] ?? $jsonData['Version'] ?? $response->body() ?: 'OK';
+
                 return [
                     'success' => true,
-                    'message' => "Connexion réussie à $service ($info)"
+                    'message' => "Connexion réussie à $service ($info)",
                 ];
             }
 
             return ['success' => false, 'message' => $this->getHumanError($response)];
 
         } catch (\Exception $e) {
-            return ['success' => false, 'message' => "Impossible de joindre le serveur : " . $e->getMessage()];
+            return ['success' => false, 'message' => 'Impossible de joindre le serveur : '.$e->getMessage()];
         }
     }
 
     private function testQbitConnection(string $url, string $username, string $password): array
     {
-        $response = Http::asForm()->post($url . '/api/v2/auth/login', [
+        $response = Http::asForm()->post($url.'/api/v2/auth/login', [
             'username' => $username,
             'password' => $password,
         ]);
 
         if ($response->successful() && $response->body() === 'Ok.') {
-            return ['success' => true, 'message' => "Connexion réussie à qBittorrent (Session validée)"];
+            return ['success' => true, 'message' => 'Connexion réussie à qBittorrent (Session validée)'];
         }
 
-        return ['success' => false, 'message' => "Échec d'authentification : " . ($response->body() ?: 'Vérifiez vos identifiants')];
+        return ['success' => false, 'message' => "Échec d'authentification : ".($response->body() ?: 'Vérifiez vos identifiants')];
     }
 
     private function getHumanError($response): string
     {
         return match ($response->status()) {
-            401 => "Non autorisé (Clé API invalide ?)",
-            403 => "Accès refusé",
-            404 => "Endpoint non trouvé (URL de base correcte ?)",
-            default => "Erreur HTTP " . $response->status(),
+            401 => 'Non autorisé (Clé API invalide ?)',
+            403 => 'Accès refusé',
+            404 => 'Endpoint non trouvé (URL de base correcte ?)',
+            default => 'Erreur HTTP '.$response->status(),
         };
     }
 
@@ -129,22 +141,26 @@ class MediaStackService
     public function getQbitData(): array
     {
         $settings = ServiceSetting::where('service_name', 'qbittorrent')->first();
-        if (!$settings || !$settings->base_url) return [];
+        if (! $settings || ! $settings->base_url) {
+            return [];
+        }
 
         $url = rtrim($settings->base_url, '/');
-        
+
         // Use cookie session if possible, or login again
-        $response = Http::asForm()->post($url . '/api/v2/auth/login', [
+        $response = Http::asForm()->post($url.'/api/v2/auth/login', [
             'username' => $settings->username,
             'password' => $settings->password,
         ]);
 
-        if (!$response->successful()) return [];
+        if (! $response->successful()) {
+            return [];
+        }
 
         $cookie = $response->header('Set-Cookie');
-        
-        $mainData = Http::withHeaders(['Cookie' => $cookie])->get($url . '/api/v2/sync/maindata');
-        
+
+        $mainData = Http::withHeaders(['Cookie' => $cookie])->get($url.'/api/v2/sync/maindata');
+
         return $mainData->successful() ? $mainData->json() : [];
     }
 
@@ -162,7 +178,7 @@ class MediaStackService
         foreach ($services as $name => $s) {
             $includeSeries = ($name === 'sonarr') ? '&includeSeries=true' : '';
             $response = Http::withHeaders(['X-Api-Key' => $s->api_key])
-                ->get(rtrim($s->base_url, '/') . "/api/v3/calendar?start=$start&end=$end&unbuffered=true" . $includeSeries);
+                ->get(rtrim($s->base_url, '/')."/api/v3/calendar?start=$start&end=$end&unbuffered=true".$includeSeries);
 
             if ($response->successful()) {
                 foreach ($response->json() as $item) {
@@ -173,9 +189,10 @@ class MediaStackService
         }
 
         // Sort by date (asc) - soonest first
-        usort($entries, function($a, $b) {
+        usort($entries, function ($a, $b) {
             $dateA = $a['airDateUtc'] ?? $a['airDate'] ?? $a['physicalRelease'] ?? $a['digitalRelease'] ?? '9999-12-31';
             $dateB = $b['airDateUtc'] ?? $b['airDate'] ?? $b['physicalRelease'] ?? $b['digitalRelease'] ?? '9999-12-31';
+
             return strcmp($dateA, $dateB);
         });
 
@@ -188,7 +205,7 @@ class MediaStackService
     public function getArrStats(): array
     {
         $services = ServiceSetting::whereIn('service_name', ['sonarr', 'radarr', 'prowlarr'])->where('is_active', true)->get()->keyBy('service_name');
-        
+
         $stats = [
             'radarr' => ['count' => 0, 'disk' => null, 'health' => 'OK'],
             'sonarr' => ['count' => 0, 'disk' => null, 'health' => 'OK'],
@@ -198,23 +215,25 @@ class MediaStackService
         foreach ($services as $name => $s) {
             $baseUrl = rtrim($s->base_url, '/');
             $apiKey = $s->api_key;
-            
+
             if ($name === 'radarr' || $name === 'sonarr') {
                 $v = '/api/v3';
-                
+
                 // Count
-                $countRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl . "$v/" . ($name === 'radarr' ? 'movie' : 'series'));
-                if ($countRes->successful()) $stats[$name]['count'] = count($countRes->json());
+                $countRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl."$v/".($name === 'radarr' ? 'movie' : 'series'));
+                if ($countRes->successful()) {
+                    $stats[$name]['count'] = count($countRes->json());
+                }
 
                 // Disk
-                $diskRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl . "$v/diskspace");
-                if ($diskRes->successful() && !empty($diskRes->json())) {
-                   $mainDisk = collect($diskRes->json())->first();
-                   $stats[$name]['disk'] = [
-                       'free' => $mainDisk['freeSpace'] ?? 0,
-                       'total' => $mainDisk['totalSpace'] ?? 0,
-                       'path' => $mainDisk['path'] ?? '/'
-                   ];
+                $diskRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl."$v/diskspace");
+                if ($diskRes->successful() && ! empty($diskRes->json())) {
+                    $mainDisk = collect($diskRes->json())->first();
+                    $stats[$name]['disk'] = [
+                        'free' => $mainDisk['freeSpace'] ?? 0,
+                        'total' => $mainDisk['totalSpace'] ?? 0,
+                        'path' => $mainDisk['path'] ?? '/',
+                    ];
                 }
 
                 // Episodes count for Sonarr
@@ -222,7 +241,7 @@ class MediaStackService
                     $items = $countRes->json();
                     $stats[$name]['episodes'] = [
                         'total' => collect($items)->sum('statistics.episodeCount'),
-                        'downloaded' => collect($items)->sum('statistics.episodeFileCount')
+                        'downloaded' => collect($items)->sum('statistics.episodeFileCount'),
                     ];
                 }
 
@@ -231,20 +250,22 @@ class MediaStackService
                     $items = $countRes->json();
                     $stats[$name]['movies'] = [
                         'total' => count($items),
-                        'downloaded' => collect($items)->where('hasFile', true)->count()
+                        'downloaded' => collect($items)->where('hasFile', true)->count(),
                     ];
                 }
             }
 
             if ($name === 'prowlarr') {
-                $indexerRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl . "/api/v1/indexer");
-                if ($indexerRes->successful()) $stats['prowlarr']['count'] = count($indexerRes->json());
+                $indexerRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl.'/api/v1/indexer');
+                if ($indexerRes->successful()) {
+                    $stats['prowlarr']['count'] = count($indexerRes->json());
+                }
             }
 
             // Health check for all (simplified)
-            $healthUrl = ($name === 'prowlarr') ? "/api/v1/health" : "/api/v3/health";
-            $healthRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl . $healthUrl);
-            if ($healthRes->successful() && !empty($healthRes->json())) {
+            $healthUrl = ($name === 'prowlarr') ? '/api/v1/health' : '/api/v3/health';
+            $healthRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl.$healthUrl);
+            if ($healthRes->successful() && ! empty($healthRes->json())) {
                 $stats[$name]['health'] = 'Warning';
             }
         }
@@ -257,12 +278,14 @@ class MediaStackService
      */
     public function getPosterUrl(string $service, ?string $path): string
     {
-        if (!$path) return '';
-        
+        if (! $path) {
+            return '';
+        }
+
         // Remove existing apikey if any for cleaner proxy
         $cleanPath = preg_replace('/[?&]apikey=[^&]+/', '', $path);
-        
-        return "/media-proxy/$service" . (str_starts_with($cleanPath, '/') ? '' : '/') . $cleanPath;
+
+        return "/media-proxy/$service".(str_starts_with($cleanPath, '/') ? '' : '/').$cleanPath;
     }
 
     /**
@@ -271,13 +294,15 @@ class MediaStackService
     public function getHistory(string $service, int $id): array
     {
         $settings = ServiceSetting::where('service_name', $service)->first();
-        if (!$settings) return [];
+        if (! $settings) {
+            return [];
+        }
 
         $endpoint = $service === 'radarr' ? '/api/v3/history/movie' : '/api/v3/history/series';
         $param = $service === 'radarr' ? 'movieId' : 'seriesId';
 
         $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])
-            ->get(rtrim($settings->base_url, '/') . "$endpoint?$param=$id");
+            ->get(rtrim($settings->base_url, '/')."$endpoint?$param=$id");
 
         return $response->successful() ? $response->json() : [];
     }
@@ -288,13 +313,15 @@ class MediaStackService
     public function getFiles(string $service, int $id): array
     {
         $settings = ServiceSetting::where('service_name', $service)->first();
-        if (!$settings) return [];
+        if (! $settings) {
+            return [];
+        }
 
         $endpoint = $service === 'radarr' ? '/api/v3/moviefile' : '/api/v3/episodefile';
         $param = $service === 'radarr' ? 'movieId' : 'seriesId';
 
         $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])
-            ->get(rtrim($settings->base_url, '/') . "$endpoint?$param=$id");
+            ->get(rtrim($settings->base_url, '/')."$endpoint?$param=$id");
 
         return $response->successful() ? $response->json() : [];
     }
@@ -318,7 +345,8 @@ class MediaStackService
      */
     public function getMedia(string $service, int $id): array
     {
-        $endpoint = ($service === 'radarr' ? 'movie' : 'series') . '/' . $id;
+        $endpoint = ($service === 'radarr' ? 'movie' : 'series').'/'.$id;
+
         return $this->request($service, 'GET', $endpoint);
     }
 
@@ -328,10 +356,12 @@ class MediaStackService
     private function request(string $service, string $method, string $endpoint, array $data = []): array
     {
         $settings = ServiceSetting::where('service_name', $service)->first();
-        if (!$settings) return [];
+        if (! $settings) {
+            return [];
+        }
 
         $v = ($service === 'prowlarr') ? '/api/v1' : '/api/v3';
-        $url = rtrim($settings->base_url, '/') . $v . '/' . ltrim($endpoint, '/');
+        $url = rtrim($settings->base_url, '/').$v.'/'.ltrim($endpoint, '/');
 
         $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])
             ->{strtolower($method)}($url, $data);
@@ -353,7 +383,7 @@ class MediaStackService
     public function updateMedia(string $service, array $data): array
     {
         $endpoint = $service === 'radarr' ? 'movie' : 'series';
-        
+
         // Sonarr V3 PUT /series endpoint expects an object, Radarr V3 PUT /movie too.
         return $this->request($service, 'PUT', $endpoint, $data);
     }
@@ -363,14 +393,15 @@ class MediaStackService
      */
     public function deleteMedia(string $service, int $id, bool $deleteFiles = false): bool
     {
-        $endpoint = ($service === 'radarr' ? 'movie' : 'series') . '/' . $id;
-        $endpoint .= "?deleteFiles=" . ($deleteFiles ? 'true' : 'false');
-        
+        $endpoint = ($service === 'radarr' ? 'movie' : 'series').'/'.$id;
+        $endpoint .= '?deleteFiles='.($deleteFiles ? 'true' : 'false');
+
         if ($service === 'radarr') {
-            $endpoint .= "&addImportExclusion=false";
+            $endpoint .= '&addImportExclusion=false';
         }
 
         $this->request($service, 'DELETE', $endpoint);
+
         return true;
     }
 
@@ -389,8 +420,8 @@ class MediaStackService
     {
         $id = $data['id'] ?? null;
         $method = $id ? 'PUT' : 'POST';
-        $endpoint = 'indexer' . ($id ? '/' . $id : '');
-        
+        $endpoint = 'indexer'.($id ? '/'.$id : '');
+
         return $this->request('prowlarr', $method, $endpoint, $data);
     }
 
@@ -399,7 +430,8 @@ class MediaStackService
      */
     public function deleteIndexer(int $id): bool
     {
-        $this->request('prowlarr', 'DELETE', 'indexer/' . $id);
+        $this->request('prowlarr', 'DELETE', 'indexer/'.$id);
+
         return true;
     }
 
@@ -411,7 +443,8 @@ class MediaStackService
         // Prowlarr usually tests on save or via a separate test endpoint
         // Many Arr services use the indexer/test endpoint for this
         $response = $this->request('prowlarr', 'POST', 'indexer/test', ['id' => $id]);
-        return !empty($response);
+
+        return ! empty($response);
     }
 
     /**
@@ -420,6 +453,7 @@ class MediaStackService
     public function getReleases(string $service, int $mediaId): array
     {
         $param = $service === 'radarr' ? 'movieId' : 'seriesId';
+
         return $this->request($service, 'GET', "release?$param=$mediaId");
     }
 
@@ -430,9 +464,10 @@ class MediaStackService
     {
         $response = $this->request($service, 'POST', 'release', [
             'guid' => $guid,
-            'indexerId' => $indexerId
+            'indexerId' => $indexerId,
         ]);
-        return !empty($response);
+
+        return ! empty($response);
     }
 
     /**
@@ -441,50 +476,58 @@ class MediaStackService
     public function performQbitAction(string $action, string $hash): bool
     {
         $settings = ServiceSetting::where('service_name', 'qbittorrent')->first();
-        if (!$settings) return false;
+        if (! $settings) {
+            return false;
+        }
 
         $url = rtrim($settings->base_url, '/');
-        
+
         // Ensure authentication
-        $authResponse = Http::asForm()->post($url . '/api/v2/auth/login', [
+        $authResponse = Http::asForm()->post($url.'/api/v2/auth/login', [
             'username' => $settings->username,
             'password' => $settings->password,
         ]);
 
         if ($authResponse->successful()) {
             $cookie = $authResponse->header('Set-Cookie');
-            if (!$cookie) {
-                \Illuminate\Support\Facades\Log::warning("qBittorrent: Aucun cookie SID trouvé dans la réponse de login.");
+            if (! $cookie) {
+                Log::warning('qBittorrent: Aucun cookie SID trouvé dans la réponse de login.');
+
                 return false;
             }
 
-            $endpoint = match($action) {
+            $endpoint = match ($action) {
                 'pause' => '/api/v2/torrents/pause',
                 'resume' => '/api/v2/torrents/resume',
                 'delete' => '/api/v2/torrents/delete',
                 default => null,
             };
-            
-            if (!$endpoint) return false;
+
+            if (! $endpoint) {
+                return false;
+            }
 
             if (empty($hash)) {
-                \Illuminate\Support\Facades\Log::warning("qBittorrent: Tentative d'action ($action) sans hash de torrent.");
+                Log::warning("qBittorrent: Tentative d'action ($action) sans hash de torrent.");
+
                 return false;
             }
 
             $payload = ['hashes' => $hash];
-            if ($action === 'delete') $payload['deleteFiles'] = 'true';
+            if ($action === 'delete') {
+                $payload['deleteFiles'] = 'true';
+            }
 
             // First attempt with legacy/standard endpoint
             $res = Http::withHeaders([
                 'Cookie' => $cookie,
                 'Referer' => $url,
                 'Origin' => $url,
-            ])->asForm()->post($url . $endpoint, $payload);
-            
+            ])->asForm()->post($url.$endpoint, $payload);
+
             // Handle qBittorrent v5.0+ where pause/resume are stop/start
             if ($res->status() === 404 && in_array($action, ['pause', 'resume'])) {
-                $altEndpoint = match($action) {
+                $altEndpoint = match ($action) {
                     'pause' => '/api/v2/torrents/stop',
                     'resume' => '/api/v2/torrents/start',
                     default => null,
@@ -495,12 +538,13 @@ class MediaStackService
                         'Cookie' => $cookie,
                         'Referer' => $url,
                         'Origin' => $url,
-                    ])->asForm()->post($url . $altEndpoint, $payload);
+                    ])->asForm()->post($url.$altEndpoint, $payload);
                 }
             }
-            
-            if (!$res->successful()) {
-                \Illuminate\Support\Facades\Log::error("qBittorrent Action Failed ($action): " . $res->status() . " - " . $res->body());
+
+            if (! $res->successful()) {
+                Log::error("qBittorrent Action Failed ($action): ".$res->status().' - '.$res->body());
+
                 return false;
             }
 
@@ -516,15 +560,17 @@ class MediaStackService
     public function triggerBgCommand(string $service, string $name, array $payload = []): bool
     {
         $settings = ServiceSetting::where('service_name', $service)->first();
-        if (!$settings) return false;
+        if (! $settings) {
+            return false;
+        }
 
         $endpoint = ($service === 'prowlarr') ? '/api/v1/command' : '/api/v3/command';
-        
+
         $body = array_merge(['name' => $name], $payload);
 
         // We use afterResponse logic in the caller, but here we just send the async-ish request
         $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])
-            ->post(rtrim($settings->base_url, '/') . $endpoint, $body);
+            ->post(rtrim($settings->base_url, '/').$endpoint, $body);
 
         return $response->successful();
     }
@@ -535,18 +581,23 @@ class MediaStackService
     public function updateIndexerPriority(int $id, int $priority): bool
     {
         $settings = ServiceSetting::where('service_name', 'prowlarr')->first();
-        if (!$settings) return false;
+        if (! $settings) {
+            return false;
+        }
 
         $url = rtrim($settings->base_url, '/');
-        
+
         // Fetch current indexer data first to avoid overwriting other settings
         $current = Http::withHeaders(['X-Api-Key' => $settings->api_key])->get("$url/api/v1/indexer/$id");
-        if (!$current->successful()) return false;
-        
+        if (! $current->successful()) {
+            return false;
+        }
+
         $data = $current->json();
         $data['priority'] = $priority;
 
         $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])->put("$url/api/v1/indexer/$id", $data);
+
         return $response->successful();
     }
 }

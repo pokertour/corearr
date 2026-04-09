@@ -170,6 +170,21 @@ return [
     'forgot_password' => 'Forgot password?',
     'login_button' => 'Login',
 
+    // Cleanup
+    'cleanup' => 'Library Cleanup',
+    'cleanup_subtitle' => 'Manage and batch delete media requests.',
+    'media_server' => 'Media Server',
+    'media_server_type' => 'Server Type',
+    'emby' => 'Emby',
+    'jellyfin' => 'Jellyfin',
+    'jellyseerr' => 'Jellyseerr',
+    'active_users' => 'Active Users',
+    'latest_requests' => 'Latest Requests',
+    'recent_users' => 'Recent Users',
+    'bulk_delete' => 'Bulk Delete',
+    'select_all' => 'Select All',
+    'watch_status' => 'Watch Status',
+
     // About
     'about_info' => 'Information',
     'version' => 'Version',
