@@ -8,6 +8,7 @@ return [
     'indexers' => 'Indexers',
     'settings' => 'Settings',
     'profile' => 'Profile & Security',
+    'more' => 'More',
     'about' => 'About',
 
     // Dashboard
@@ -83,6 +84,17 @@ return [
     'series' => 'Series',
     'dispo' => 'Available',
     'manquant' => 'Missing',
+    'newest_added' => 'Newest Added',
+    'oldest_added' => 'Oldest Added',
+    'title_az' => 'Title (A-Z)',
+    'title_za' => 'Title (Z-A)',
+    'year_newest' => 'Year (Newest)',
+    'year_oldest' => 'Year (Oldest)',
+    'all_tracking' => 'All Tracking',
+    'all_status' => 'All Status',
+    'all_genres' => 'All Genres',
+    'all_qualities' => 'All Qualities',
+    'clear_filters' => 'Clear Filters',
 
     // Indexers
     'indexer_management' => 'Indexer Management',

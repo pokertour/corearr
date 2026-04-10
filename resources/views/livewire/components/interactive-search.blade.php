@@ -1,21 +1,35 @@
 <?php
 
-use Livewire\Volt\Component;
 use App\Services\MediaStack\MediaStackService;
+use Livewire\Volt\Component;
 
-new class extends Component {
+new class extends Component
+{
     public ?array $media = null;
+
     public string $service = '';
+
     public bool $isOpen = false;
+
     public array $releases = [];
+
     public bool $loading = false;
+
+    public ?int $seasonNumber = null;
+
+    public ?int $episodeId = null;
 
     protected $listeners = ['openInteractiveSearch' => 'open'];
 
-    public function open(array $media, string $service)
+    public function open(int $mediaId, string $mediaTitle, string $service, ?int $seasonNumber = null, ?int $episodeId = null)
     {
-        $this->media = $media;
+        $this->media = [
+            'id' => $mediaId,
+            'title' => $mediaTitle,
+        ];
         $this->service = $service;
+        $this->seasonNumber = $seasonNumber;
+        $this->episodeId = $episodeId;
         $this->isOpen = true;
         $this->releases = [];
         $this->loadReleases();
@@ -24,37 +38,43 @@ new class extends Component {
     public function loadReleases()
     {
         $this->loading = true;
-        $service = new MediaStackService();
-        
-        // Trigger a fresh search command in background if needed? 
-        // For now we fetch cached/current releases
-        $this->releases = $service->getReleases($this->service, $this->media['id']);
-        
-        // Sort by quality and score (Arr services usually return them with a score)
-        usort($this->releases, fn($a, $b) => ($b['seeders'] ?? 0) <=> ($a['seeders'] ?? 0));
-        
+        $service = new MediaStackService;
+
+        $this->releases = $service->getReleases(
+            $this->service,
+            $this->media['id'],
+            $this->seasonNumber,
+            $this->episodeId
+        );
+
+        // Sort by seeders descending
+        usort($this->releases, fn ($a, $b) => ($b['seeders'] ?? 0) <=> ($a['seeders'] ?? 0));
+
         $this->loading = false;
     }
 
     public function download(string $guid, int $indexerId)
     {
-        $service = new MediaStackService();
+        $service = new MediaStackService;
         $success = $service->downloadRelease($this->service, $guid, $indexerId);
-        
+
         if ($success) {
-            $this->dispatch('toast', message: "Téléchargement lancé !", type: 'success');
+            $this->dispatch('toast', message: 'Téléchargement lancé !', type: 'success');
             $this->isOpen = false;
         } else {
-            $this->dispatch('toast', message: "Échec du lancement.", type: 'error');
+            $this->dispatch('toast', message: 'Échec du lancement.', type: 'error');
         }
     }
 
     public function formatSize($bytes)
     {
-        if ($bytes <= 0) return '0 B';
+        if ($bytes <= 0) {
+            return '0 B';
+        }
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
         $i = floor(log($bytes, 1024));
-        return round($bytes / pow(1024, $i), 1) . ' ' . $units[$i];
+
+        return round($bytes / pow(1024, $i), 1).' '.$units[$i];
     }
 };
 
@@ -91,7 +111,15 @@ new class extends Component {
             <div class="px-8 py-6 border-b border-zinc-100 dark:border-zinc-900 flex items-center justify-between shrink-0 bg-zinc-50/50 dark:bg-zinc-900/50">
                 <div>
                     <h3 class="text-xl font-black text-zinc-900 dark:text-white uppercase tracking-tight">Recherche Interactive</h3>
-                    <p class="text-sm text-zinc-500 font-medium">{{ $media['title'] ?? '' }} ({{ $media['year'] ?? '' }})</p>
+                    <p class="text-sm text-zinc-500 font-medium">
+                        {{ $media['title'] ?? '' }} 
+                        @if($seasonNumber !== null)
+                            &bull; Saison {{ $seasonNumber }}
+                        @endif
+                        @if($episodeId)
+                            &bull; Épisode spécifique
+                        @endif
+                    </p>
                 </div>
                 <div class="flex items-center gap-4">
                     <button wire:click="loadReleases" class="p-2 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition">
@@ -115,8 +143,8 @@ new class extends Component {
                         Aucune release trouvée. Essayez de forcer une recherche.
                     </div>
                 @else
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse text-[13px]">
+                    <div class="overflow-x-auto -mx-4 lg:-mx-8 px-4 lg:px-8">
+                        <table class="w-full text-left border-collapse text-[13px] min-w-[800px]">
                             <thead class="sticky top-0 bg-white dark:bg-zinc-950 z-10 border-b border-zinc-100 dark:border-zinc-900">
                                 <tr class="text-zinc-400 font-black uppercase tracking-widest text-[10px]">
                                     <th class="px-4 py-3">Indexer</th>

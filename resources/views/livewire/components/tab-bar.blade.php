@@ -83,18 +83,17 @@ new class extends Component {};
             </a>
         @endforeach
 
-        <!-- Plus Button -->
+        <!-- More Button -->
         <button @click="menuOpen = !menuOpen"
                 class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors relative
                       {{ $isSecondaryActive ? 'text-core-primary' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300' }}">
             @if ($isSecondaryActive)
                 <span class="absolute top-0 w-8 h-0.5 bg-core-primary rounded-full"></span>
             @endif
-            <div class="w-10 h-10 rounded-full flex items-center justify-center {{ $isSecondaryActive ? 'bg-core-primary/10' : 'bg-zinc-100 dark:bg-zinc-800' }} hover:bg-zinc-200 dark:hover:bg-zinc-700 transition">
-                <svg class="w-6 h-6 transition-transform duration-200" :class="menuOpen ? 'rotate-45' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-            </div>
+            <svg class="w-6 h-6 transition-transform duration-200" :class="menuOpen ? 'rotate-90' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="{{ $isSecondaryActive ? '2.5' : '2' }}" d="M5 12h.01M12 12h.01M19 12h.01" />
+            </svg>
+            <span class="text-[9px] font-{{ $isSecondaryActive ? 'bold' : 'medium' }}">{{ __('messages.more') }}</span>
         </button>
     </div>
 </nav>

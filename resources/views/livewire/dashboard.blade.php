@@ -210,13 +210,16 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
             <div class="lg:col-span-3 xl:col-span-1">
                 <livewire:widgets.media-users />
             </div>
-            
+
             <div class="lg:col-span-3 xl:col-span-1">
                 <livewire:widgets.media-top-users />
             </div>
         @endif
 
-        @if (!$qbitConfigured && !$arrConfigured && !\App\Models\ServiceSetting::whereIn('service_name', ['jellyseerr', 'emby', 'jellyfin'])->where('is_active', true)->exists())
+        @if (
+            !$qbitConfigured &&
+                !$arrConfigured &&
+                !\App\Models\ServiceSetting::whereIn('service_name', ['jellyseerr', 'emby', 'jellyfin'])->where('is_active', true)->exists())
             <div
                 class="lg:col-span-3 flex flex-col items-center justify-center py-20 bg-zinc-50 dark:bg-zinc-900/50 rounded-3xl border-2 border-dashed border-zinc-200 dark:border-zinc-800">
                 <p class="text-zinc-500 font-medium mb-4 text-center px-6">{{ __('messages.no_services_configured') }}

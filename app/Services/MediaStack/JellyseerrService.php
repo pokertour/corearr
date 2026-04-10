@@ -4,6 +4,7 @@ namespace App\Services\MediaStack;
 
 use App\Models\ServiceSetting;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class JellyseerrService
 {
@@ -70,7 +71,8 @@ class JellyseerrService
             ->get($this->getUrl($url));
 
         if (! $response->successful()) {
-            \Illuminate\Support\Facades\Log::error("Jellyseerr getUsers failed: " . $response->status());
+            Log::error('Jellyseerr getUsers failed: '.$response->status());
+
             return [];
         }
 
@@ -89,7 +91,13 @@ class JellyseerrService
         $response = Http::withHeaders($this->getHeaders())
             ->delete($this->getUrl("request/{$requestId}"));
 
-        return $response->successful();
+        if (! $response->successful()) {
+            Log::error("Jellyseerr Delete Request Failed (ID {$requestId}): ".$response->status().' - '.$response->body());
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -119,8 +127,9 @@ class JellyseerrService
         $response = Http::withHeaders($this->getHeaders())
             ->get($this->getUrl('request/count'));
 
-        if (!$response->successful()) {
-            \Illuminate\Support\Facades\Log::error("Jellyseerr getRequestCounts failed: " . $response->status());
+        if (! $response->successful()) {
+            Log::error('Jellyseerr getRequestCounts failed: '.$response->status());
+
             return [];
         }
 
@@ -145,4 +154,47 @@ class JellyseerrService
         return $response->successful() ? $response->json() : null;
     }
 
+    /**
+     * Get multiple media details in parallel with chunking and uniqueness.
+     */
+    public function getBulkMediaDetails(array $items): array
+    {
+        if (! $this->isConfigured() || empty($items)) {
+            return [];
+        }
+
+        // Unique by tmdbId + type to avoid duplicate requests
+        $uniqueRequested = [];
+        foreach ($items as $item) {
+            $key = "{$item['type']}_{$item['tmdbId']}";
+            $uniqueRequested[$key] = $item;
+        }
+
+        $headers = $this->getHeaders();
+        $results = [];
+
+        // Process in chunks of 15 to avoid overwhelming the server or timing out
+        $chunks = array_chunk(array_values($uniqueRequested), 15);
+
+        foreach ($chunks as $chunk) {
+            $responses = Http::pool(function ($pool) use ($chunk, $headers) {
+                foreach ($chunk as $item) {
+                    $tmdbId = $item['tmdbId'];
+                    $urlType = ($item['type'] === 'tv' || $item['type'] === 'series') ? 'tv' : 'movie';
+                    $pool->as("{$urlType}_{$tmdbId}")
+                        ->withHeaders($headers)
+                        ->timeout(3)
+                        ->get($this->getUrl("{$urlType}/{$tmdbId}"));
+                }
+            });
+
+            foreach ($responses as $key => $response) {
+                if ($response->successful()) {
+                    $results[$key] = $response->json();
+                }
+            }
+        }
+
+        return $results;
+    }
 }

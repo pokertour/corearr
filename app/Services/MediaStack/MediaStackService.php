@@ -308,6 +308,26 @@ class MediaStackService
     }
 
     /**
+     * Get Episodes for a series (Sonarr)
+     */
+    public function getEpisodes(string $service, int $id): array
+    {
+        if ($service !== 'sonarr') {
+            return [];
+        }
+
+        $settings = ServiceSetting::where('service_name', $service)->first();
+        if (! $settings) {
+            return [];
+        }
+
+        $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])
+            ->get(rtrim($settings->base_url, '/')."/api/v3/episode?seriesId=$id");
+
+        return $response->successful() ? $response->json() : [];
+    }
+
+    /**
      * Get Media Files
      */
     public function getFiles(string $service, int $id): array
@@ -346,8 +366,26 @@ class MediaStackService
     public function getMedia(string $service, int $id): array
     {
         $endpoint = ($service === 'radarr' ? 'movie' : 'series').'/'.$id;
+        $media = $this->request($service, 'GET', $endpoint);
 
-        return $this->request($service, 'GET', $endpoint);
+        if (empty($media)) {
+            return [];
+        }
+
+        // Normalize ratings for Sonarr (usually a single object, while Radarr is an associative array of objects)
+        if ($service === 'sonarr' && isset($media['ratings'])) {
+            if (isset($media['ratings']['value']) && ! isset($media['ratings']['imdb'])) {
+                $media['ratings'] = [
+                    'Sonarr' => [
+                        'value' => $media['ratings']['value'],
+                        'votes' => $media['ratings']['votes'] ?? 0,
+                        'type' => 'user',
+                    ],
+                ];
+            }
+        }
+
+        return $media;
     }
 
     /**
@@ -363,10 +401,20 @@ class MediaStackService
         $v = ($service === 'prowlarr') ? '/api/v1' : '/api/v3';
         $url = rtrim($settings->base_url, '/').$v.'/'.ltrim($endpoint, '/');
 
-        $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])
-            ->{strtolower($method)}($url, $data);
+        $request = Http::withHeaders(['X-Api-Key' => $settings->api_key]);
 
-        return $response->successful() ? ($response->json() ?: []) : [];
+        // For DELETE requests with query params, avoid sending an empty JSON body if data is empty
+        $response = (strtoupper($method) === 'DELETE' && empty($data))
+            ? $request->delete($url)
+            : $request->{strtolower($method)}($url, $data);
+
+        if (! $response->successful()) {
+            Log::error("MediaStack API Error ($service $method $endpoint): ".$response->status().' - '.$response->body());
+
+            return [];
+        }
+
+        return $response->json() ?: [];
     }
 
     /**
@@ -393,14 +441,32 @@ class MediaStackService
      */
     public function deleteMedia(string $service, int $id, bool $deleteFiles = false): bool
     {
-        $endpoint = ($service === 'radarr' ? 'movie' : 'series').'/'.$id;
-        $endpoint .= '?deleteFiles='.($deleteFiles ? 'true' : 'false');
-
-        if ($service === 'radarr') {
-            $endpoint .= '&addImportExclusion=false';
+        $settings = ServiceSetting::where('service_name', $service)->first();
+        if (! $settings) {
+            return false;
         }
 
-        $this->request($service, 'DELETE', $endpoint);
+        $v = '/api/v3';
+        $url = rtrim($settings->base_url, '/').$v.'/'.($service === 'radarr' ? 'movie' : 'series').'/'.$id;
+
+        $params = [
+            'deleteFiles' => $deleteFiles ? 'true' : 'false',
+        ];
+
+        if ($service === 'radarr') {
+            $params['addImportExclusion'] = 'false';
+        }
+
+        // Use withQueryParameters to ensure these are in the URL string, not the body
+        $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])
+            ->withQueryParameters($params)
+            ->delete($url);
+
+        if (! $response->successful()) {
+            Log::error("MediaStack Delete Media Failed ($service ID $id): ".$response->status().' - '.$response->body());
+
+            return false;
+        }
 
         return true;
     }
@@ -448,13 +514,22 @@ class MediaStackService
     }
 
     /**
-     * Get releases for a specific media item
+     * Get releases for a specific media item, season or episode
      */
-    public function getReleases(string $service, int $mediaId): array
+    public function getReleases(string $service, int $mediaId, ?int $seasonNumber = null, ?int $episodeId = null): array
     {
         $param = $service === 'radarr' ? 'movieId' : 'seriesId';
+        $endpoint = "release?$param=$mediaId";
 
-        return $this->request($service, 'GET', "release?$param=$mediaId");
+        if ($service === 'sonarr') {
+            if ($episodeId) {
+                $endpoint = "release?episodeId=$episodeId";
+            } elseif ($seasonNumber !== null) {
+                $endpoint .= "&seasonNumber=$seasonNumber";
+            }
+        }
+
+        return $this->request($service, 'GET', $endpoint);
     }
 
     /**

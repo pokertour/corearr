@@ -1,83 +1,225 @@
 <?php
 
-use Livewire\Component;
+use App\Models\ServiceSetting;
+use App\Services\MediaStack\MediaStackService;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Http;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
-use App\Services\MediaStack\MediaStackService;
-use Illuminate\Support\Facades\Http;
-use App\Models\ServiceSetting;
+use Livewire\Component;
 
-new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends Component {
+new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends Component
+{
     #[Url]
     public string $viewMode = 'grid';
 
+    #[Url]
+    public string $sortBy = 'added_desc';
+
+    #[Url]
+    public string $filterMonitored = 'all';
+
+    #[Url]
+    public string $filterStatus = 'all';
+
+    #[Url]
+    public string $filterGenre = 'all';
+
+    #[Url]
+    public string $filterQuality = 'all';
+
     public array $movies = [];
+
     public array $series = [];
+
     public string $activeTab = 'movies';
 
     public int $perPage = 18;
+
     public int $movieLimit = 18;
+
     public int $seriesLimit = 18;
 
     public bool $radarrConfigured = false;
+
     public bool $sonarrConfigured = false;
 
     public string $searchQuery = '';
+
     public array $searchResults = [];
+
     public bool $isSearching = false;
+
+    public array $availableGenres = [];
+
+    public array $qualityProfiles = [];
 
     public function mount(MediaStackService $service)
     {
+        // Restore from session
+        $this->sortBy = session('media_sortBy', 'added_desc');
+        $this->filterMonitored = session('media_filterMonitored', 'all');
+        $this->filterStatus = session('media_filterStatus', 'all');
+        $this->filterGenre = session('media_filterGenre', 'all');
+        $this->filterQuality = session('media_filterQuality', 'all');
+
         $this->radarrConfigured = ServiceSetting::where('service_name', 'radarr')->where('is_active', true)->exists();
         $this->sonarrConfigured = ServiceSetting::where('service_name', 'sonarr')->where('is_active', true)->exists();
 
         $this->loadMedia($service);
     }
 
+    public function updated($name, $value)
+    {
+        if (in_array($name, ['sortBy', 'filterMonitored', 'filterStatus', 'filterGenre', 'filterQuality'])) {
+            session(['media_'.$name => $value]);
+        }
+    }
+
     public function loadMedia(MediaStackService $service)
     {
         if ($this->radarrConfigured) {
             $this->movies = $this->fetchFromArr('radarr', '/api/v3/movie');
+            $this->qualityProfiles['radarr'] = $service->getQualityProfiles('radarr');
         }
         if ($this->sonarrConfigured) {
             $this->series = $this->fetchFromArr('sonarr', '/api/v3/series');
+            $this->qualityProfiles['sonarr'] = $service->getQualityProfiles('sonarr');
         }
+
+        $this->updateAvailableGenres();
+    }
+
+    private function updateAvailableGenres()
+    {
+        $all = $this->activeTab === 'movies' ? $this->movies : $this->series;
+        $this->availableGenres = collect($all)
+            ->flatMap(fn ($item) => $item['genres'] ?? [])
+            ->unique()
+            ->sort()
+            ->values()
+            ->toArray();
     }
 
     private function fetchFromArr(string $service, string $endpoint): array
     {
         $settings = ServiceSetting::where('service_name', $service)->first();
-        if (!$settings) {
+        if (! $settings) {
             return [];
         }
 
         try {
-            $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])->get(rtrim($settings->base_url, '/') . $endpoint);
+            $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])->get(rtrim($settings->base_url, '/').$endpoint);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 return [];
             }
 
             // Prevent PayloadTooLargeException: Only keep essential info for the list/grid
             return collect($response->json())
-                ->map(function ($item) use ($service) {
+                ->map(function ($item) {
                     return [
                         'id' => $item['id'],
                         'title' => $item['title'],
-                        'year' => $item['year'] ?? ($item['firstAired'] ? \Carbon\Carbon::parse($item['firstAired'])->year : ''),
+                        'year' => $item['year'] ?? ($item['firstAired'] ? Carbon::parse($item['firstAired'])->year : ''),
                         'images' => $item['images'] ?? [],
                         'monitored' => $item['monitored'] ?? false,
-                        'hasFile' => $item['hasFile'] ?? ($item['statistics']['percentOfEpisodes'] === 100 ? true : false),
+                        'hasFile' => $item['hasFile'] ?? (($item['statistics']['percentOfEpisodes'] ?? 0) === 100 ? true : false),
                         'qualityProfileId' => $item['qualityProfileId'] ?? 0,
                         'studio' => $item['studio'] ?? ($item['network'] ?? ''),
                         'overview' => $item['overview'] ?? '',
+                        'added' => $item['added'] ?? '',
+                        'genres' => $item['genres'] ?? [],
                     ];
                 })
                 ->toArray();
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return [];
         }
+    }
+
+    public function getFilteredMedia(): array
+    {
+        $data = $this->activeTab === 'movies' ? $this->movies : $this->series;
+
+        return collect($data)
+            ->filter(function ($item) {
+                // Search (Internal)
+                if ($this->searchQuery && ! str_contains(strtolower($item['title']), strtolower($this->searchQuery))) {
+                    return false;
+                }
+
+                // Monitored
+                if ($this->filterMonitored !== 'all') {
+                    $isMonitored = $this->filterMonitored === 'monitored';
+                    if ($item['monitored'] !== $isMonitored) {
+                        return false;
+                    }
+                }
+
+                // Status
+                if ($this->filterStatus !== 'all') {
+                    $hasFile = $this->filterStatus === 'available';
+                    if ($item['hasFile'] !== $hasFile) {
+                        return false;
+                    }
+                }
+
+                // Genre
+                if ($this->filterGenre !== 'all') {
+                    if (! in_array($this->filterGenre, $item['genres'] ?? [])) {
+                        return false;
+                    }
+                }
+
+                // Quality
+                if ($this->filterQuality !== 'all') {
+                    if ($item['qualityProfileId'] != $this->filterQuality) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
+            ->sort(function ($a, $b) {
+                switch ($this->sortBy) {
+                    case 'title_asc':
+                        return strcmp($a['title'], $b['title']);
+                    case 'title_desc':
+                        return strcmp($b['title'], $a['title']);
+                    case 'year_asc':
+                        return ($a['year'] <=> $b['year']) ?: strcmp($a['title'], $b['title']);
+                    case 'year_desc':
+                        return ($b['year'] <=> $a['year']) ?: strcmp($a['title'], $b['title']);
+                    case 'added_asc':
+                        return strcmp($a['added'], $b['added']);
+                    case 'added_desc':
+                    default:
+                        return strcmp($b['added'] ?? '', $a['added'] ?? '');
+                }
+            })
+            ->values()
+            ->toArray();
+    }
+
+    public function updatedActiveTab()
+    {
+        $this->updateAvailableGenres();
+        $this->filterGenre = 'all';
+        $this->filterQuality = 'all';
+    }
+
+    public function clearFilters()
+    {
+        $this->sortBy = 'added_desc';
+        $this->filterMonitored = 'all';
+        $this->filterStatus = 'all';
+        $this->filterGenre = 'all';
+        $this->filterQuality = 'all';
+        $this->searchQuery = '';
+
+        session()->forget(['media_sortBy', 'media_filterMonitored', 'media_filterStatus', 'media_filterGenre', 'media_filterQuality']);
     }
 
     public function loadMore()
@@ -98,6 +240,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
     {
         if (strlen($this->searchQuery) < 3) {
             $this->searchResults = [];
+
             return;
         }
 
@@ -107,7 +250,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
 
         $settings = ServiceSetting::where('service_name', $service)->first();
         if ($settings) {
-            $res = Http::withHeaders(['X-Api-Key' => $settings->api_key])->get(rtrim($settings->base_url, '/') . $endpoint . '?term=' . urlencode($this->searchQuery));
+            $res = Http::withHeaders(['X-Api-Key' => $settings->api_key])->get(rtrim($settings->base_url, '/').$endpoint.'?term='.urlencode($this->searchQuery));
 
             $this->searchResults = $res->successful() ? array_slice($res->json(), 0, 8) : [];
         }
@@ -125,7 +268,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
     {
         $service = $this->activeTab === 'movies' ? 'radarr' : 'sonarr';
         $settings = ServiceSetting::where('service_name', $service)->first();
-        if (!$settings) {
+        if (! $settings) {
             return;
         }
 
@@ -148,16 +291,16 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
         }
 
         try {
-            $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])->post(rtrim($settings->base_url, '/') . $endpoint, $payload);
+            $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])->post(rtrim($settings->base_url, '/').$endpoint, $payload);
 
             if ($response->successful()) {
                 $this->dispatch('notify', title: __('messages.media_added_title'), message: __('messages.media_added_message', ['title' => $item['title']]), type: 'success');
                 $this->clearSearch();
-                $this->loadMedia(new MediaStackService());
+                $this->loadMedia(new MediaStackService);
             } else {
                 $this->dispatch('notify', title: __('messages.error'), message: $response->json()['message'] ?? __('messages.media_add_error_message'), type: 'error');
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             $this->dispatch('notify', title: __('messages.error'), message: $e->getMessage(), type: 'error');
         }
     }
@@ -165,7 +308,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
     public function getPoster(string $service, array $item): string
     {
         $posterPath = collect($item['images'] ?? [])->firstWhere('coverType', 'poster')['url'] ?? null;
-        if (!$posterPath) {
+        if (! $posterPath) {
             return '';
         }
 
@@ -252,11 +395,67 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
         </div>
     </div>
 
+    <!-- Filter & Sort Bar -->
+    <div class="flex flex-wrap items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+        <!-- Sort -->
+        <div class="flex items-center gap-2">
+            <span class="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">{{ __('messages.sort_by') }}</span>
+            <select wire:model.live="sortBy" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+                <option value="added_desc">{{ __('messages.newest_added') }}</option>
+                <option value="added_asc">{{ __('messages.oldest_added') }}</option>
+                <option value="title_asc">{{ __('messages.title_az') }}</option>
+                <option value="title_desc">{{ __('messages.title_za') }}</option>
+                <option value="year_desc">{{ __('messages.year_newest') }}</option>
+                <option value="year_asc">{{ __('messages.year_oldest') }}</option>
+            </select>
+        </div>
+
+        <div class="h-6 w-px bg-zinc-200 dark:bg-zinc-700 hidden sm:block mx-1"></div>
+
+        <!-- Monitored -->
+        <select wire:model.live="filterMonitored" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+            <option value="all">{{ __('messages.all_tracking') }}</option>
+            <option value="monitored">{{ __('messages.tracked') }}</option>
+            <option value="unmonitored">{{ __('messages.ignored') }}</option>
+        </select>
+
+        <!-- Status -->
+        <select wire:model.live="filterStatus" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+            <option value="all">{{ __('messages.all_status') }}</option>
+            <option value="available">{{ __('messages.available') }}</option>
+            <option value="missing">{{ __('messages.missing') }}</option>
+        </select>
+
+        <!-- Genre -->
+        @if(!empty($availableGenres))
+            <select wire:model.live="filterGenre" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+                <option value="all">{{ __('messages.all_genres') }}</option>
+                @foreach($availableGenres as $genre)
+                    <option value="{{ $genre }}">{{ $genre }}</option>
+                @endforeach
+            </select>
+        @endif
+
+        <!-- Quality -->
+        <select wire:model.live="filterQuality" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+            <option value="all">{{ __('messages.all_qualities') }}</option>
+            @foreach($qualityProfiles[$activeTab === 'movies' ? 'radarr' : 'sonarr'] ?? [] as $profile)
+                <option value="{{ $profile['id'] }}">{{ $profile['name'] }}</option>
+            @endforeach
+        </select>
+
+        @if($sortBy !== 'added_desc' || $filterMonitored !== 'all' || $filterStatus !== 'all' || $filterGenre !== 'all' || $filterQuality !== 'all' || $searchQuery !== '')
+            <button wire:click="clearFilters" class="ml-auto text-[10px] font-black text-core-primary uppercase tracking-widest hover:underline transition">
+                {{ __('messages.clear_filters') }}
+            </button>
+        @endif
+    </div>
+
     @php
-        $all = $activeTab === 'movies' ? $movies : $series;
+        $filtered = $this->getFilteredMedia();
         $limit = $activeTab === 'movies' ? $movieLimit : $seriesLimit;
-        $list = array_slice($all, 0, $limit);
-        $hasMore = count($all) > $limit;
+        $list = array_slice($filtered, 0, $limit);
+        $hasMore = count($filtered) > $limit;
         $serviceName = $activeTab === 'movies' ? 'radarr' : 'sonarr';
         $configured = $activeTab === 'movies' ? $radarrConfigured : $sonarrConfigured;
     @endphp

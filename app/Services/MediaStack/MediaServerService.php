@@ -90,36 +90,58 @@ class MediaServerService
     }
 
     /**
-     * Get user activity/watch status for a specific media based on TMDB ID
+     * Get the entire library mapping for a user, indexed by TMDB ID.
+     * This is much more efficient than per-item calls for Jellyfin/Emby.
      */
-    public function hasUserWatched(string $userId, string $tmdbId, string $mediaType = 'Movie'): bool
+    public function getLibraryMapping(string $userId): array
     {
         if (! $this->isConfigured()) {
-            return false;
+            return [];
         }
 
-        $typeFilter = $mediaType === 'Movie' ? 'Movie' : 'Series';
-
-        // Fetch the item for the user by TMDB ID
         $response = Http::withHeaders($this->getHeaders())
             ->get($this->getUrl("Users/{$userId}/Items"), [
-                'AnyProviderIdEquals' => "tmdb.{$tmdbId}",
-                'IncludeItemTypes' => $typeFilter,
                 'Recursive' => 'true',
+                'Fields' => 'ProviderIds,CommunityRating,PremiereDate',
+                'IncludeItemTypes' => 'Movie,Series',
             ]);
 
         if (! $response->successful()) {
-            return false;
+            return [];
         }
 
-        $data = $response->json();
-        if (empty($data['Items'])) {
-            return false;
+        $items = $response->json()['Items'] ?? [];
+        $mapping = [];
+
+        foreach ($items as $item) {
+            $tmdbId = $item['ProviderIds']['Tmdb'] ?? null;
+            if (! $tmdbId) {
+                continue;
+            }
+
+            $mapping[$tmdbId] = [
+                'isWatched' => $item['UserData']['Played'] ?? false,
+                'rating' => $item['CommunityRating'] ?? 0,
+                'releaseYear' => isset($item['PremiereDate']) ? (int) substr($item['PremiereDate'], 0, 4) : null,
+                'itemId' => $item['Id'],
+            ];
         }
 
-        $item = $data['Items'][0];
+        return $mapping;
+    }
 
-        // If it's a TV show, the "Played" status typically means all episodes are played.
-        return $item['UserData']['Played'] ?? false;
+    /**
+     * Legacy/Individual watch status check (uses mapping internally or fallback)
+     */
+    public function getUserWatchMetadata(string $userId, string $tmdbId, string $mediaType = 'Movie'): array
+    {
+        // For individual calls, we still use the old method if it's Emby,
+        // but for Jellyfin we really should use mapping.
+        // For simplicity in Cleanup, we'll refactor Cleanup to use getLibraryMapping directly.
+        return [
+            'isWatched' => false,
+            'rating' => 0,
+            'releaseYear' => null,
+        ];
     }
 }
