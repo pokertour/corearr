@@ -19,11 +19,11 @@ class SetLocale
         // 1. Check if user is authenticated and has a locale preference
         if (auth()->check() && auth()->user()->locale) {
             $locale = auth()->user()->locale;
-        } 
+        }
         // 2. Check session for fallback (for non-authenticated or temporary changes)
         elseif (Session::has('locale')) {
             $locale = Session::get('locale');
-        } 
+        }
         // 3. Browser detection as a last resort
         else {
             $browserLocale = substr($request->server('HTTP_ACCEPT_LANGUAGE'), 0, 2);
@@ -33,7 +33,7 @@ class SetLocale
         }
 
         App::setLocale($locale);
-        
+
         // Ensure session remains updated
         if (Session::get('locale') !== $locale) {
             Session::put('locale', $locale);

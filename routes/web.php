@@ -19,4 +19,4 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // Image Proxy for Arr Services
 Route::get('/media-proxy/{service}/{path}', MediaProxyController::class)
     ->where('path', '.*')
-    ->middleware(['auth']);
+    ->name('media.proxy');

@@ -59,7 +59,7 @@
 
         <!-- Dynamic Content -->
         <div class="flex-1 overflow-y-auto w-full pb-20 lg:pb-0 scroll-smooth">
-            <div class="max-w-7xl mx-auto p-4 lg:p-8">
+            <div class="max-w-[1800px] mx-auto p-4 lg:p-8">
                 {{ $slot }}
             </div>
         </div>

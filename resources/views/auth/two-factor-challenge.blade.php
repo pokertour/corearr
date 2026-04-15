@@ -1,5 +1,5 @@
 <x-layouts.guest title="Authentification à deux facteurs">
-    <div class="min-h-screen flex items-center justify-center bg-core-bg dark:bg-black py-12 px-4 sm:px-6 lg:px-8">
+    <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div class="max-w-md w-full space-y-8 bg-white dark:bg-zinc-900 p-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xl shadow-core-primary/5" x-data="{ recovery: false }">
             <div>
                 <div class="w-16 h-16 mx-auto flex items-center justify-center">

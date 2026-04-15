@@ -222,27 +222,35 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                 <p class="text-sm text-zinc-500">{{ __('messages.torrent_subtitle') }}</p>
             </div>
 
-            <div class="flex items-center gap-2">
-                <button wire:click="refreshTorrents" class="cursor-pointer p-2.5 bg-core-primary text-white rounded-xl hover:bg-core-primary/90 transition shadow-lg shadow-core-primary/20">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                </button>
-            </div>
+            <div class="hidden md:flex items-center gap-2"></div>
         </div>
 
         <!-- Filters Bar -->
-        <div class="flex flex-col md:flex-row gap-4 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-            <div class="relative flex-1">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-400">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <div x-data="{ mobileFiltersOpen: false }" class="flex flex-col gap-4 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+            <div class="flex items-center gap-3 w-full">
+                <div class="relative flex-1">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-400">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    </div>
+                    <input wire:model.live.debounce.300ms="search" 
+                           type="text" 
+                           placeholder="{{ __('messages.search_placeholder') }}" 
+                           class="w-full pl-10 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-core-primary outline-none transition">
                 </div>
-                <input wire:model.live.debounce.300ms="search" 
-                       type="text" 
-                       placeholder="{{ __('messages.search_placeholder') }}" 
-                       class="w-full pl-10 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-core-primary outline-none transition">
+
+                <button type="button" x-on:click="mobileFiltersOpen = !mobileFiltersOpen" x-bind:aria-expanded="mobileFiltersOpen.toString()" aria-controls="torrents-mobile-filters" class="md:hidden p-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-600 dark:text-zinc-400 transition hover:bg-zinc-100 dark:hover:bg-zinc-700">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6h18M6 12h12m-9 6h6"/>
+                    </svg>
+                </button>
+
+                <button wire:click="refreshTorrents" class="md:hidden cursor-pointer p-2 bg-core-primary text-white rounded-xl hover:bg-core-primary/90 transition shadow-lg shadow-core-primary/20">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                </button>
             </div>
 
-            <div class="flex flex-wrap items-center gap-2 sm:gap-4 w-full md:w-auto">
-                <select wire:model.live="filterState" class="flex-1 sm:flex-none bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+            <div id="torrents-mobile-filters" x-cloak x-show="mobileFiltersOpen" class="md:hidden flex flex-col gap-4 w-full overflow-x-hidden border-t border-zinc-100 dark:border-zinc-800/50 pt-4">
+                <select wire:model.live="filterState" class="w-full min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
                     <option value="all">{{ __('messages.all_statuses') }}</option>
                     <option value="downloading">{{ __('messages.downloads') }}</option>
                     <option value="paused">{{ __('messages.paused') }}</option>
@@ -250,9 +258,8 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                     <option value="completed">{{ __('messages.completed') }}</option>
                 </select>
 
-                <!-- Sorting (Mobile only) -->
-                <div class="flex items-center gap-2 flex-1 min-w-[150px] md:hidden">
-                    <select wire:model.live="sortBy" class="flex-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+                <div class="flex items-center gap-2 w-full">
+                    <select wire:model.live="sortBy" class="flex-1 min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
                         <option value="name">{{ __('messages.name') }}</option>
                         <option value="size">{{ __('messages.size') }}</option>
                         <option value="progress">{{ __('messages.progress') }}</option>
@@ -271,8 +278,22 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                         @endif
                     </button>
                 </div>
+            </div>
 
-                <div x-data="{ open: false }" class="relative flex-none ml-auto sm:ml-0">
+            <div class="hidden md:flex flex-wrap items-center gap-4 w-full">
+                <select wire:model.live="filterState" class="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+                    <option value="all">{{ __('messages.all_statuses') }}</option>
+                    <option value="downloading">{{ __('messages.downloads') }}</option>
+                    <option value="paused">{{ __('messages.paused') }}</option>
+                    <option value="seeding">{{ __('messages.seeding') }}</option>
+                    <option value="completed">{{ __('messages.completed') }}</option>
+                </select>
+
+                <button wire:click="refreshTorrents" class="cursor-pointer p-2.5 bg-core-primary text-white rounded-xl hover:bg-core-primary/90 transition shadow-lg shadow-core-primary/20">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                </button>
+
+                <div x-data="{ open: false }" class="relative ml-auto">
                     <button @click="open = !open" class="cursor-pointer px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
                         {{ __('messages.columns') }}

@@ -3,8 +3,10 @@
 namespace App\Services\MediaStack;
 
 use App\Models\ServiceSetting;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 
 class MediaStackService
 {
@@ -361,6 +363,75 @@ class MediaStackService
     }
 
     /**
+     * Get a random backdrop URL from active media services
+     */
+    public function getRandomBackdropUrl(): ?string
+    {
+        // Use Cache to avoid hitting Arr services for every single guest page load
+        return Cache::remember('corearr_guest_backdrop', now()->addMinutes(30), function () {
+            $services = ServiceSetting::whereIn('service_name', ['radarr', 'sonarr'])
+                ->where('is_active', true)
+                ->get()
+                ->shuffle();
+
+            if ($services->isEmpty()) {
+                return null;
+            }
+
+            foreach ($services as $service) {
+                $endpoint = $service->service_name === 'radarr' ? 'movie' : 'series';
+                $items = $this->request($service->service_name, 'GET', $endpoint);
+
+                if (empty($items)) {
+                    continue;
+                }
+
+                // Filter for items with images and monitored
+                $qualifiedItems = collect($items)->filter(fn ($item) => ! empty($item['images']) && ($item['monitored'] ?? true));
+
+                // Fallback to non-monitored if none found
+                if ($qualifiedItems->isEmpty()) {
+                    $qualifiedItems = collect($items)->filter(fn ($item) => ! empty($item['images']));
+                }
+
+                if ($qualifiedItems->isNotEmpty()) {
+                    $item = $qualifiedItems->random();
+
+                    // Prefer fanart/backdrop for backgrounds
+                    $backdrop = collect($item['images'])->firstWhere('coverType', 'fanart')
+                        ?? collect($item['images'])->firstWhere('coverType', 'backdrop')
+                        ?? collect($item['images'])->first();
+
+                    if ($backdrop) {
+                        // Use local URL if available, otherwise remoteUrl
+                        $path = $backdrop['url'] ?? $backdrop['remoteUrl'] ?? null;
+
+                        if ($path) {
+                            // Split potential query params (like ?lastWrite=...) to avoid double encoding in signedRoute
+                            $urlParts = explode('?', $path);
+                            $cleanPath = ltrim($urlParts[0], '/');
+                            $params = ['service' => $service->service_name, 'path' => $cleanPath];
+
+                            if (isset($urlParts[1])) {
+                                parse_str($urlParts[1], $extraParams);
+                                $params = array_merge($params, $extraParams);
+                            }
+
+                            return URL::temporarySignedRoute(
+                                'media.proxy',
+                                now()->addHours(2),
+                                $params
+                            );
+                        }
+                    }
+                }
+            }
+
+            return null;
+        });
+    }
+
+    /**
      * Get a single media item by ID
      */
     public function getMedia(string $service, int $id): array
@@ -441,8 +512,16 @@ class MediaStackService
      */
     public function deleteMedia(string $service, int $id, bool $deleteFiles = false): bool
     {
+        Log::info('MediaStackService->deleteMedia started', ['service' => $service, 'id' => $id, 'deleteFiles' => $deleteFiles]);
+
         $settings = ServiceSetting::where('service_name', $service)->first();
-        if (! $settings) {
+        if (! $settings || $id <= 0) {
+            if ($id <= 0) {
+                Log::warning("MediaStack: Attempted to delete media with invalid ID 0 ($service)");
+            } else {
+                Log::error("MediaStack: Settings not found for service $service");
+            }
+
             return false;
         }
 
@@ -461,6 +540,12 @@ class MediaStackService
         $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])
             ->withQueryParameters($params)
             ->delete($url);
+
+        Log::info('MediaStack Delete Request Sent', [
+            'url' => $url,
+            'params' => $params,
+            'status' => $response->status(),
+        ]);
 
         if (! $response->successful()) {
             Log::error("MediaStack Delete Media Failed ($service ID $id): ".$response->status().' - '.$response->body());
@@ -674,5 +759,61 @@ class MediaStackService
         $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])->put("$url/api/v1/indexer/$id", $data);
 
         return $response->successful();
+    }
+
+    /**
+     * Find all media IDs for a given TMDB ID.
+     * CRITICAL: We fetch the full list and filter LOCALLY to ensure we only get
+     * the item matching the TMDB ID, as some *arr versions ignore the query param.
+     */
+    public function findMediaIdsByTmdbId(string $service, int $tmdbId): array
+    {
+        if ($tmdbId <= 0) {
+            return [];
+        }
+
+        $endpoint = $service === 'radarr' ? 'movie' : 'series';
+        $ids = [];
+
+        // Fetch the full library and filter locally to be 100% safe
+        $response = $this->request($service, 'GET', $endpoint);
+
+        if (! empty($response) && is_array($response)) {
+            // Some versions return a single object if only one exists (rare but possible)
+            if (isset($response['id'])) {
+                $response = [$response];
+            }
+
+            foreach ($response as $item) {
+                // Check tmdbId (Radarr) or tvdbId/tmdbId (Sonarr depends on version)
+                $itemTmdbId = $item['tmdbId'] ?? null;
+
+                if ($itemTmdbId == $tmdbId && isset($item['id'])) {
+                    $ids[] = $item['id'];
+                }
+            }
+        }
+
+        return array_unique($ids);
+    }
+
+    /**
+     * Attempt to find a media item by its TMDB ID in Radarr/Sonarr
+     * returns the internal ID (movie ID or series ID) or null
+     */
+    public function findMediaByTmdbId(string $service, int $tmdbId): ?int
+    {
+        Log::info('MediaStackService->findMediaByTmdbId started', ['service' => $service, 'tmdbId' => $tmdbId]);
+
+        $ids = $this->findMediaIdsByTmdbId($service, $tmdbId);
+        $id = $ids[0] ?? null;
+
+        if ($id) {
+            Log::info("MediaStack Fallback: Found ID $id");
+        } else {
+            Log::warning("MediaStack Fallback: No media found for TMDB $tmdbId in $service");
+        }
+
+        return $id;
     }
 }

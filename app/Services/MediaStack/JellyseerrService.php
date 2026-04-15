@@ -84,15 +84,54 @@ class JellyseerrService
      */
     public function deleteRequest(int $requestId): bool
     {
+        Log::info('JellyseerrService->deleteRequest started', ['id' => $requestId]);
+
         if (! $this->isConfigured()) {
+            Log::error('JellyseerrService: Service not configured');
+
             return false;
         }
 
-        $response = Http::withHeaders($this->getHeaders())
-            ->delete($this->getUrl("request/{$requestId}"));
+        $url = $this->getUrl("request/{$requestId}");
+        $response = Http::withHeaders($this->getHeaders())->delete($url);
+
+        Log::info('Jellyseerr Delete Request Sent', [
+            'url' => $url,
+            'status' => $response->status(),
+        ]);
 
         if (! $response->successful()) {
             Log::error("Jellyseerr Delete Request Failed (ID {$requestId}): ".$response->status().' - '.$response->body());
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Delete a media object (purges from library and removes all associated requests).
+     */
+    public function deleteMedia(int $mediaId): bool
+    {
+        Log::info('JellyseerrService->deleteMedia started', ['id' => $mediaId]);
+
+        if (! $this->isConfigured()) {
+            Log::error('JellyseerrService: Service not configured');
+
+            return false;
+        }
+
+        $url = $this->getUrl("media/{$mediaId}");
+        $response = Http::withHeaders($this->getHeaders())->delete($url);
+
+        Log::info('Jellyseerr Delete Media Sent', [
+            'url' => $url,
+            'status' => $response->status(),
+        ]);
+
+        if (! $response->successful()) {
+            Log::error("Jellyseerr Delete Media Failed (ID {$mediaId}): ".$response->status().' - '.$response->body());
 
             return false;
         }
