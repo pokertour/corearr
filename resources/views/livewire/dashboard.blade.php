@@ -6,6 +6,7 @@ use Livewire\Attributes\Title;
 use App\Services\MediaStack\MediaStackService;
 use App\Services\MediaStack\JellyseerrService;
 use App\Models\ServiceSetting;
+use Illuminate\Support\Facades\Cache;
 
 new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class extends Component {
     public array $stats = [
@@ -22,6 +23,12 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
     public bool $mediaServicesConfigured = false;
     public bool $showCustomizePanel = false;
     public array $jellyStats = [];
+    public array $configuredServices = [];
+    public array $speedHistory = [];
+    public array $torrentStateStats = [];
+    public array $requestPipelineStats = [];
+    public array $fulfillmentStats = [];
+    public array $indexerHealthStats = [];
     public array $dashboardPreferences = [
         'widgets' => [],
         'order' => [],
@@ -43,18 +50,30 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
         'arr_calendar' => 'messages.dashboard_widget_arr_calendar',
         'media_users' => 'messages.dashboard_widget_media_users',
         'media_top_users' => 'messages.dashboard_widget_media_top_users',
+        'ops_speed_24h' => 'messages.dashboard_widget_ops_speed_24h',
+        'ops_torrent_states' => 'messages.dashboard_widget_ops_torrent_states',
+        'ops_request_pipeline' => 'messages.dashboard_widget_ops_request_pipeline',
+        'ops_fulfillment_time' => 'messages.dashboard_widget_ops_fulfillment_time',
+        'ops_indexer_health' => 'messages.dashboard_widget_ops_indexer_health',
     ];
 
     public function mount(MediaStackService $service, JellyseerrService $jellyseerr)
     {
-        $this->qbitConfigured = ServiceSetting::where('service_name', 'qbittorrent')->where('is_active', true)->exists();
-        $this->arrConfigured = ServiceSetting::whereIn('service_name', ['sonarr', 'radarr'])
+        $downServices = [];
+
+        $this->configuredServices = ServiceSetting::query()
+            ->whereIn('service_name', ['qbittorrent', 'radarr', 'sonarr', 'prowlarr', 'jellyseerr', 'emby', 'jellyfin'])
             ->where('is_active', true)
-            ->exists();
-        $this->jellyseerrConfigured = ServiceSetting::where('service_name', 'jellyseerr')->where('is_active', true)->exists();
-        $this->mediaServicesConfigured = ServiceSetting::whereIn('service_name', ['jellyseerr', 'emby', 'jellyfin'])
-            ->where('is_active', true)
-            ->exists();
+            ->pluck('is_active', 'service_name')
+            ->map(fn ($isActive) => (bool) $isActive)
+            ->all();
+
+        $this->qbitConfigured = $this->isServiceConfigured('qbittorrent');
+        $this->arrConfigured = $this->isServiceConfigured('sonarr') || $this->isServiceConfigured('radarr');
+        $this->jellyseerrConfigured = $this->isServiceConfigured('jellyseerr');
+        $this->mediaServicesConfigured = $this->isServiceConfigured('jellyseerr')
+            || $this->isServiceConfigured('emby')
+            || $this->isServiceConfigured('jellyfin');
 
         $this->dashboardPreferences = auth()->user()?->dashboard_preferences ?? ['widgets' => [], 'order' => []];
         $this->ensureWidgetOrder();
@@ -65,12 +84,53 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
             $this->stats['up_speed'] = $qbit['server_state']['up_info_speed'] ?? 0;
             $this->stats['count'] = count($qbit['torrents'] ?? []);
             $this->stats['total_size'] = collect($qbit['torrents'] ?? [])->sum('size');
+            $this->recordSpeedSample($this->stats['dl_speed'], $this->stats['up_speed']);
+            $this->speedHistory = $this->buildSpeedHistory();
+            $this->torrentStateStats = $this->buildTorrentStateStats($qbit['torrents'] ?? []);
+
+            if (empty($qbit)) {
+                $downServices[] = 'qBittorrent';
+            }
         }
 
         $this->arrStats = $service->getArrStats();
 
         if ($this->jellyseerrConfigured) {
             $this->jellyStats = $jellyseerr->getRequestCounts();
+            $this->requestPipelineStats = $this->buildRequestPipelineStats();
+            $recentRequests = $jellyseerr->getRequests(100, 0, 'all');
+            $requestResults = $recentRequests['results'] ?? [];
+            $this->fulfillmentStats = $this->buildFulfillmentStats($requestResults);
+
+            if (empty($this->jellyStats)) {
+                $downServices[] = 'Jellyseerr';
+            }
+        }
+
+        if ($this->isServiceConfigured('prowlarr')) {
+            $indexers = $service->getIndexers();
+            $this->indexerHealthStats = $this->buildIndexerHealthStats($indexers);
+
+            if (empty($indexers)) {
+                $downServices[] = 'Prowlarr';
+            }
+        }
+
+        if ($this->isServiceConfigured('radarr') && ! isset($this->arrStats['radarr'])) {
+            $downServices[] = 'Radarr';
+        }
+        if ($this->isServiceConfigured('sonarr') && ! isset($this->arrStats['sonarr'])) {
+            $downServices[] = 'Sonarr';
+        }
+
+        $downServices = array_values(array_unique($downServices));
+        if (! empty($downServices)) {
+            $this->dispatch(
+                'notify',
+                title: __('messages.service_down_notification_title'),
+                message: __('messages.service_down_notification_message', ['services' => implode(', ', $downServices)]),
+                type: 'warning'
+            );
         }
     }
 
@@ -189,14 +249,159 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
     {
         return match ($widget) {
             'qbit_downloads_count', 'qbit_download_speed', 'qbit_upload_speed', 'qbit_total_volume', 'qbit_downloads' => $this->qbitConfigured,
-            'arr_radarr' => isset($this->arrStats['radarr']) && ServiceSetting::where('service_name', 'radarr')->exists(),
-            'arr_sonarr' => isset($this->arrStats['sonarr']) && ServiceSetting::where('service_name', 'sonarr')->exists(),
-            'arr_prowlarr' => isset($this->arrStats['prowlarr']) && ServiceSetting::where('service_name', 'prowlarr')->exists(),
+            'arr_radarr' => isset($this->arrStats['radarr']) && $this->isServiceConfigured('radarr'),
+            'arr_sonarr' => isset($this->arrStats['sonarr']) && $this->isServiceConfigured('sonarr'),
+            'arr_prowlarr' => isset($this->arrStats['prowlarr']) && $this->isServiceConfigured('prowlarr'),
             'arr_calendar' => $this->arrConfigured,
             'jellyseerr_total', 'jellyseerr_movies', 'jellyseerr_series', 'jellyseerr_processing', 'jellyseerr_completed' => $this->jellyseerrConfigured,
             'media_users', 'media_top_users' => $this->mediaServicesConfigured,
+            'ops_speed_24h', 'ops_torrent_states' => $this->qbitConfigured,
+            'ops_request_pipeline' => $this->jellyseerrConfigured,
+            'ops_fulfillment_time' => $this->jellyseerrConfigured,
+            'ops_indexer_health' => $this->isServiceConfigured('prowlarr'),
             default => false,
         };
+    }
+
+    protected function isServiceConfigured(string $service): bool
+    {
+        return (bool) ($this->configuredServices[$service] ?? false);
+    }
+
+    protected function recordSpeedSample(int $downloadSpeed, int $uploadSpeed): void
+    {
+        $key = 'dashboard:qbit_speed_samples';
+        $samples = Cache::get($key, []);
+        $cutoff = now()->subDay()->timestamp;
+
+        $samples = array_values(array_filter($samples, fn ($sample) => ($sample['ts'] ?? 0) >= $cutoff));
+        $samples[] = [
+            'ts' => now()->timestamp,
+            'dl' => max(0, $downloadSpeed),
+            'ul' => max(0, $uploadSpeed),
+        ];
+
+        if (count($samples) > 288) {
+            $samples = array_slice($samples, -288);
+        }
+
+        Cache::put($key, $samples, now()->addHours(30));
+    }
+
+    protected function buildSpeedHistory(): array
+    {
+        $samples = Cache::get('dashboard:qbit_speed_samples', []);
+        if (empty($samples)) {
+            return [];
+        }
+
+        return array_slice($samples, -24);
+    }
+
+    protected function buildTorrentStateStats(array $torrents): array
+    {
+        $stats = [
+            'downloading' => 0,
+            'seeding' => 0,
+            'paused' => 0,
+            'stalled' => 0,
+            'other' => 0,
+        ];
+
+        foreach ($torrents as $torrent) {
+            $state = strtolower((string) ($torrent['state'] ?? ''));
+
+            if (str_contains($state, 'downloading') || str_contains($state, 'meta')) {
+                $stats['downloading']++;
+            } elseif (str_contains($state, 'upload') || str_contains($state, 'seed')) {
+                $stats['seeding']++;
+            } elseif (str_contains($state, 'pause')) {
+                $stats['paused']++;
+            } elseif (str_contains($state, 'stalled')) {
+                $stats['stalled']++;
+            } else {
+                $stats['other']++;
+            }
+        }
+
+        return $stats;
+    }
+
+    protected function buildRequestPipelineStats(): array
+    {
+        return [
+            'pending' => (int) ($this->jellyStats['processing'] ?? 0),
+            'available' => (int) ($this->jellyStats['available'] ?? 0),
+            'completed' => (int) ($this->jellyStats['completed'] ?? 0),
+            'total' => (int) ($this->jellyStats['total'] ?? 0),
+        ];
+    }
+
+    protected function buildFulfillmentStats(array $requests): array
+    {
+        $durationsInHours = [];
+        $completedCount = 0;
+
+        foreach ($requests as $request) {
+            $status = (int) ($request['media']['status'] ?? 0);
+            if (! in_array($status, [4, 5], true)) {
+                continue;
+            }
+
+            $createdAt = isset($request['createdAt']) ? strtotime((string) $request['createdAt']) : null;
+            $updatedAt = isset($request['updatedAt']) ? strtotime((string) $request['updatedAt']) : null;
+
+            if (! $createdAt || ! $updatedAt || $updatedAt < $createdAt) {
+                continue;
+            }
+
+            $durationsInHours[] = ($updatedAt - $createdAt) / 3600;
+            $completedCount++;
+        }
+
+        if (empty($durationsInHours)) {
+            return [
+                'avg_hours' => null,
+                'p90_hours' => null,
+                'completed' => 0,
+            ];
+        }
+
+        sort($durationsInHours);
+        $p90Index = (int) floor((count($durationsInHours) - 1) * 0.9);
+
+        return [
+            'avg_hours' => round(array_sum($durationsInHours) / count($durationsInHours), 1),
+            'p90_hours' => round($durationsInHours[$p90Index], 1),
+            'completed' => $completedCount,
+        ];
+    }
+
+    protected function buildIndexerHealthStats(array $indexers): array
+    {
+        $enabled = 0;
+        $degraded = 0;
+        $disabled = 0;
+
+        foreach ($indexers as $indexer) {
+            $isEnabled = (bool) ($indexer['enable'] ?? false);
+            $hasError = ! empty($indexer['lastError']) || ! empty($indexer['message']);
+
+            if (! $isEnabled) {
+                $disabled++;
+            } elseif ($hasError) {
+                $degraded++;
+            } else {
+                $enabled++;
+            }
+        }
+
+        return [
+            'enabled' => $enabled,
+            'degraded' => $degraded,
+            'disabled' => $disabled,
+            'total' => count($indexers),
+        ];
     }
 
     protected function persistDashboardPreferences(): void
@@ -229,7 +434,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
                     {{ __('messages.customize_dashboard') }}
                 </button>
                 @foreach (['radarr', 'sonarr', 'prowlarr'] as $s)
-                    @if (isset($arrStats[$s]) && \App\Models\ServiceSetting::where('service_name', $s)->exists())
+                    @if (isset($arrStats[$s]) && $this->isServiceConfigured($s))
                         <div
                             class="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
                             <div
@@ -357,6 +562,171 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
                 @elseif ($widgetKey === 'media_top_users')
                     <div class="xl:col-span-2">
                         <livewire:widgets.media-top-users />
+                    </div>
+                @elseif ($widgetKey === 'ops_speed_24h')
+                    <div class="xl:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ __('messages.ops_speed_24h_title') }}</h4>
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{{ __('messages.ops_period_24h') }}</span>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_qbit_cache') }}</p>
+                        @if ($qbitConfigured && !empty($speedHistory))
+                            @php
+                                $dlValues = array_map(fn ($sample) => (int) ($sample['dl'] ?? 0), $speedHistory);
+                                $ulValues = array_map(fn ($sample) => (int) ($sample['ul'] ?? 0), $speedHistory);
+                                $maxValue = max(max($dlValues), max($ulValues), 1);
+                                $buildPolyline = function (array $values, int $height = 90, int $width = 340) use ($maxValue) {
+                                    $count = max(count($values) - 1, 1);
+                                    $points = [];
+                                    foreach ($values as $index => $value) {
+                                        $x = round(($index / $count) * $width, 2);
+                                        $y = round($height - (($value / $maxValue) * $height), 2);
+                                        $points[] = "{$x},{$y}";
+                                    }
+                                    return implode(' ', $points);
+                                };
+                            @endphp
+                            <svg viewBox="0 0 340 90" class="w-full h-28 mb-3">
+                                <polyline fill="none" stroke="rgb(59 130 246)" stroke-width="2.5" points="{{ $buildPolyline($dlValues) }}" />
+                                <polyline fill="none" stroke="rgb(20 184 166)" stroke-width="2.5" points="{{ $buildPolyline($ulValues) }}" />
+                            </svg>
+                            <div class="grid grid-cols-2 gap-3 text-xs">
+                                <div class="rounded-xl border border-blue-200/60 dark:border-blue-500/20 bg-blue-50/60 dark:bg-blue-500/5 p-3">
+                                    <p class="font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">DL</p>
+                                    <p class="text-zinc-900 dark:text-zinc-100 font-black">{{ $this->formatSize(end($dlValues) ?: 0) }}/s</p>
+                                </div>
+                                <div class="rounded-xl border border-teal-200/60 dark:border-teal-500/20 bg-teal-50/60 dark:bg-teal-500/5 p-3">
+                                    <p class="font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest">UL</p>
+                                    <p class="text-zinc-900 dark:text-zinc-100 font-black">{{ $this->formatSize(end($ulValues) ?: 0) }}/s</p>
+                                </div>
+                            </div>
+                        @else
+                            <p class="text-sm text-zinc-500">{{ __('messages.qbit_not_configured') }}</p>
+                        @endif
+                    </div>
+                @elseif ($widgetKey === 'ops_torrent_states')
+                    <div class="xl:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
+                        <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('messages.ops_torrent_states_title') }}</h4>
+                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_qbit_live') }}</p>
+                        @if ($qbitConfigured && !empty($torrentStateStats))
+                            @php
+                                $totalStates = max(array_sum($torrentStateStats), 1);
+                                $stateRows = [
+                                    ['key' => 'downloading', 'label' => __('messages.ops_downloading'), 'color' => 'bg-blue-500'],
+                                    ['key' => 'seeding', 'label' => __('messages.ops_seeding'), 'color' => 'bg-teal-500'],
+                                    ['key' => 'paused', 'label' => __('messages.ops_paused'), 'color' => 'bg-yellow-500'],
+                                    ['key' => 'stalled', 'label' => __('messages.ops_stalled'), 'color' => 'bg-orange-500'],
+                                    ['key' => 'other', 'label' => __('messages.ops_other'), 'color' => 'bg-zinc-500'],
+                                ];
+                            @endphp
+                            <div class="space-y-3">
+                                @foreach ($stateRows as $row)
+                                    @php
+                                        $value = (int) ($torrentStateStats[$row['key']] ?? 0);
+                                        $percent = round(($value / $totalStates) * 100, 1);
+                                    @endphp
+                                    <div>
+                                        <div class="flex justify-between text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 mb-1">
+                                            <span>{{ $row['label'] }}</span>
+                                            <span>{{ $value }} ({{ $percent }}%)</span>
+                                        </div>
+                                        <div class="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                                            <div class="h-full {{ $row['color'] }}" style="width: {{ $percent }}%"></div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @else
+                            <p class="text-sm text-zinc-500">{{ __('messages.qbit_not_configured') }}</p>
+                        @endif
+                    </div>
+                @elseif ($widgetKey === 'ops_request_pipeline')
+                    <div class="xl:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
+                        <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('messages.ops_request_pipeline_title') }}</h4>
+                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_jellyseerr_live') }}</p>
+                        @if ($jellyseerrConfigured && !empty($requestPipelineStats))
+                            @php
+                                $pipelineTotal = max((int) ($requestPipelineStats['total'] ?? 0), 1);
+                                $pipelineRows = [
+                                    ['key' => 'pending', 'label' => __('messages.pending'), 'color' => 'bg-orange-500'],
+                                    ['key' => 'available', 'label' => __('messages.available'), 'color' => 'bg-blue-500'],
+                                    ['key' => 'completed', 'label' => __('messages.completed'), 'color' => 'bg-green-500'],
+                                ];
+                            @endphp
+                            <div class="space-y-3">
+                                @foreach ($pipelineRows as $row)
+                                    @php
+                                        $value = (int) ($requestPipelineStats[$row['key']] ?? 0);
+                                        $percent = round(($value / $pipelineTotal) * 100, 1);
+                                    @endphp
+                                    <div>
+                                        <div class="flex justify-between text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 mb-1">
+                                            <span>{{ $row['label'] }}</span>
+                                            <span>{{ $value }} ({{ $percent }}%)</span>
+                                        </div>
+                                        <div class="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                                            <div class="h-full {{ $row['color'] }}" style="width: {{ $percent }}%"></div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @else
+                            <p class="text-sm text-zinc-500">{{ __('messages.not_configured_title', ['service' => 'Jellyseerr']) }}</p>
+                        @endif
+                    </div>
+                @elseif ($widgetKey === 'ops_fulfillment_time')
+                    <div class="xl:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
+                        <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('messages.ops_fulfillment_time_title') }}</h4>
+                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_jellyseerr_recent') }}</p>
+                        @if ($jellyseerrConfigured && !empty($fulfillmentStats) && $fulfillmentStats['avg_hours'] !== null)
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="rounded-xl border border-blue-200/60 dark:border-blue-500/20 bg-blue-50/60 dark:bg-blue-500/5 p-3">
+                                    <p class="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400">{{ __('messages.ops_avg') }}</p>
+                                    <p class="text-xl font-black text-zinc-900 dark:text-zinc-100">{{ $fulfillmentStats['avg_hours'] }}h</p>
+                                </div>
+                                <div class="rounded-xl border border-purple-200/60 dark:border-purple-500/20 bg-purple-50/60 dark:bg-purple-500/5 p-3">
+                                    <p class="text-[10px] font-bold uppercase tracking-widest text-purple-600 dark:text-purple-400">P90</p>
+                                    <p class="text-xl font-black text-zinc-900 dark:text-zinc-100">{{ $fulfillmentStats['p90_hours'] }}h</p>
+                                </div>
+                            </div>
+                            <p class="mt-3 text-xs text-zinc-500">{{ __('messages.ops_based_on_completed', ['count' => $fulfillmentStats['completed']]) }}</p>
+                        @else
+                            <p class="text-sm text-zinc-500">{{ __('messages.ops_no_data') }}</p>
+                        @endif
+                    </div>
+                @elseif ($widgetKey === 'ops_indexer_health')
+                    <div class="xl:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
+                        <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('messages.ops_indexer_health_title') }}</h4>
+                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_prowlarr_live') }}</p>
+                        @if ($this->isServiceConfigured('prowlarr') && !empty($indexerHealthStats))
+                            @php
+                                $totalIndexers = max((int) ($indexerHealthStats['total'] ?? 0), 1);
+                                $indexerRows = [
+                                    ['key' => 'enabled', 'label' => __('messages.enabled'), 'color' => 'bg-green-500'],
+                                    ['key' => 'degraded', 'label' => __('messages.ops_degraded'), 'color' => 'bg-yellow-500'],
+                                    ['key' => 'disabled', 'label' => __('messages.disabled'), 'color' => 'bg-zinc-500'],
+                                ];
+                            @endphp
+                            <div class="space-y-3">
+                                @foreach ($indexerRows as $row)
+                                    @php
+                                        $value = (int) ($indexerHealthStats[$row['key']] ?? 0);
+                                        $percent = round(($value / $totalIndexers) * 100, 1);
+                                    @endphp
+                                    <div>
+                                        <div class="flex justify-between text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 mb-1">
+                                            <span>{{ $row['label'] }}</span>
+                                            <span>{{ $value }} ({{ $percent }}%)</span>
+                                        </div>
+                                        <div class="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                                            <div class="h-full {{ $row['color'] }}" style="width: {{ $percent }}%"></div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @else
+                            <p class="text-sm text-zinc-500">{{ __('messages.not_configured_title', ['service' => 'Prowlarr']) }}</p>
+                        @endif
                     </div>
                 @endif
             @endif
