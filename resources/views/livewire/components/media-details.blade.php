@@ -17,8 +17,12 @@ new class extends Component
     public string $activeTab = 'info';
 
     public bool $loadingDetails = false;
+    public bool $interactiveSearchLoading = false;
 
-    protected $listeners = ['openMediaDetails' => 'open'];
+    protected $listeners = [
+        'openMediaDetails' => 'open',
+        'interactiveSearchLoaded' => 'stopInteractiveSearchLoading',
+    ];
 
     public function open(array $media, string $service)
     {
@@ -106,9 +110,58 @@ new class extends Component
         ]);
 
         if ($success) {
-            $this->dispatch('toast', message: "La recherche pour {$this->media['title']} a été envoyée en arrière-plan.", type: 'success');
+            $this->dispatch('toast', message: __('messages.media_details_search_sent', ['title' => $this->media['title']]), type: 'success');
             $this->close();
         }
+    }
+
+    public function openInteractiveSearchGlobal(): void
+    {
+        if (! $this->media) {
+            return;
+        }
+
+        $this->interactiveSearchLoading = true;
+        $this->dispatch('openInteractiveSearch',
+            mediaId: $this->media['id'],
+            mediaTitle: $this->media['title'],
+            service: $this->service
+        );
+    }
+
+    public function openInteractiveSearchSeason(int $seasonNumber): void
+    {
+        if (! $this->media) {
+            return;
+        }
+
+        $this->interactiveSearchLoading = true;
+        $this->dispatch('openInteractiveSearch',
+            mediaId: $this->media['id'],
+            mediaTitle: $this->media['title'],
+            service: $this->service,
+            seasonNumber: $seasonNumber
+        );
+    }
+
+    public function openInteractiveSearchEpisode(int $episodeId): void
+    {
+        if (! $this->media) {
+            return;
+        }
+
+        $this->interactiveSearchLoading = true;
+        $this->dispatch('openInteractiveSearch',
+            mediaId: $this->media['id'],
+            mediaTitle: $this->media['title'],
+            service: $this->service,
+            episodeId: $episodeId
+        );
+    }
+
+    public function stopInteractiveSearchLoading(): void
+    {
+        $this->interactiveSearchLoading = false;
     }
 
     public function getPoster(string $type = 'poster'): string
@@ -146,7 +199,7 @@ new class extends Component
 
         $this->dispatch('media-updated');
         $this->dispatch('toast',
-            message: $this->media['monitored'] ? 'Série/Film désormais surveillé.' : 'Surveillance arrêtée.',
+            message: $this->media['monitored'] ? __('messages.media_details_monitored_on') : __('messages.media_details_monitored_off'),
             type: 'success'
         );
     }
@@ -162,7 +215,7 @@ new class extends Component
 
         $this->isOpen = false;
         $this->dispatch('media-deleted');
-        $this->dispatch('toast', message: 'Le média a été retiré de la bibliothèque.', type: 'info');
+        $this->dispatch('toast', message: __('messages.media_details_removed'), type: 'info');
     }
 
     public function getQualitySummary(): string
@@ -256,10 +309,10 @@ new class extends Component
                         <div class="absolute inset-0 bg-linear-to-t from-white dark:from-zinc-950 via-transparent to-transparent"></div>
                         
                         <div class="absolute top-6 right-6 flex gap-2 z-20">
-                             <button wire:click="toggleMonitored" class="p-2.5 bg-white/40 dark:bg-black/20 backdrop-blur-md rounded-xl text-zinc-900 dark:text-white hover:bg-white/60 transition group cursor-pointer" title="Surveillance">
+                             <button wire:click="toggleMonitored" class="p-2.5 bg-white/40 dark:bg-black/20 backdrop-blur-md rounded-xl text-zinc-900 dark:text-white hover:bg-white/60 transition group cursor-pointer" title="{{ __('messages.media_details_monitoring') }}">
                                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 {{ ($media['monitored'] ?? false) ? 'text-green-500 fill-current' : 'text-zinc-500' }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
                              </button>
-                             <button x-on:click="if(confirm('Supprimer ce média ?')) $wire.deleteMedia(confirm('Supprimer aussi les fichiers ?'))" class="p-2.5 bg-white/40 dark:bg-black/20 backdrop-blur-md rounded-xl text-red-500 hover:bg-red-500/20 transition cursor-pointer" title="Supprimer">
+                             <button x-on:click="if(confirm('{{ __('messages.media_details_confirm_delete') }}')) $wire.deleteMedia(confirm('{{ __('messages.media_details_confirm_delete_files') }}'))" class="p-2.5 bg-white/40 dark:bg-black/20 backdrop-blur-md rounded-xl text-red-500 hover:bg-red-500/20 transition cursor-pointer" title="{{ __('messages.delete') }}">
                                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                              </button>
                         </div>
@@ -322,13 +375,13 @@ new class extends Component
 
                     <!-- Navigation Tabs -->
                     <div class="px-8 border-b border-zinc-100 dark:border-zinc-900 flex gap-6 overflow-x-auto no-scrollbar">
-                        <button wire:click="$set('activeTab', 'info')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'info', 'border-transparent text-zinc-400': $wire.activeTab !== 'info' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">Info</button>
+                        <button wire:click="$set('activeTab', 'info')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'info', 'border-transparent text-zinc-400': $wire.activeTab !== 'info' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">{{ __('messages.media_details_tab_info') }}</button>
                         @if($service === 'sonarr')
-                            <button wire:click="$set('activeTab', 'seasons')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'seasons', 'border-transparent text-zinc-400': $wire.activeTab !== 'seasons' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">Saisons</button>
+                            <button wire:click="$set('activeTab', 'seasons')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'seasons', 'border-transparent text-zinc-400': $wire.activeTab !== 'seasons' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">{{ __('messages.media_details_tab_seasons') }}</button>
                         @endif
-                        <button wire:click="$set('activeTab', 'files')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'files', 'border-transparent text-zinc-400': $wire.activeTab !== 'files' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">Fichiers</button>
-                        <button wire:click="$set('activeTab', 'history')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'history', 'border-transparent text-zinc-400': $wire.activeTab !== 'history' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">Historique</button>
-                        <button wire:click="$set('activeTab', 'edit')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'edit', 'border-transparent text-zinc-400': $wire.activeTab !== 'edit' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">Modifier</button>
+                        <button wire:click="$set('activeTab', 'files')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'files', 'border-transparent text-zinc-400': $wire.activeTab !== 'files' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">{{ __('messages.media_details_tab_files') }}</button>
+                        <button wire:click="$set('activeTab', 'history')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'history', 'border-transparent text-zinc-400': $wire.activeTab !== 'history' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">{{ __('messages.media_details_tab_history') }}</button>
+                        <button wire:click="$set('activeTab', 'edit')" :class="{ 'border-core-primary text-zinc-900 dark:text-white': $wire.activeTab === 'edit', 'border-transparent text-zinc-400': $wire.activeTab !== 'edit' }" class="py-4 border-b-2 font-bold text-sm transition tracking-tight shrink-0">{{ __('messages.media_details_tab_edit') }}</button>
                     </div>
 
                     <!-- Content Area -->
@@ -345,24 +398,59 @@ new class extends Component
                         @if ($activeTab === 'info')
                             <div wire:key="tab-info-{{ $media['id'] }}" class="space-y-6">
                                 <div>
-                                    <h4 class="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">Synopsis</h4>
-                                    <p class="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">{{ $media['overview'] ?? 'Pas de description.' }}</p>
+                                    <h4 class="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">{{ __('messages.media_details_synopsis') }}</h4>
+                                    <p class="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">{{ $media['overview'] ?? __('messages.media_details_no_description') }}</p>
                                 </div>
 
                                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4">
                                     <div class="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                                        <span class="text-[10px] font-bold text-zinc-400 uppercase block mb-1">Profil</span>
+                                        <span class="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{{ __('messages.media_details_profile') }}</span>
                                         <span class="text-sm font-bold text-zinc-900 dark:text-white">{{ $this->getQualityProfileName() }}</span>
                                     </div>
                                     <div class="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
                                         <span class="text-[10px] font-bold text-zinc-400 uppercase block mb-1">Statut</span>
-                                        <span class="text-sm font-bold {{ ($media['hasFile'] ?? false) ? 'text-green-500' : 'text-yellow-500' }}">
-                                            {{ ($media['hasFile'] ?? false) ? 'Disponible' : 'Manquant' }}
-                                        </span>
+                                        @if($service === 'sonarr')
+                                            @php
+                                                $regularSeasons = collect($media['seasons'] ?? [])
+                                                    ->filter(fn ($season) => (int) ($season['seasonNumber'] ?? -1) > 0)
+                                                    ->values();
+
+                                                $totalRegularSeasons = $regularSeasons->count();
+                                                $completedRegularSeasons = $regularSeasons->filter(function ($season) {
+                                                    $seasonStats = $season['statistics'] ?? [];
+                                                    $seasonTotalEpisodes = (int) ($seasonStats['totalEpisodeCount'] ?? 0);
+                                                    $seasonDownloadedEpisodes = (int) ($seasonStats['episodeFileCount'] ?? 0);
+
+                                                    return $seasonTotalEpisodes > 0 && $seasonDownloadedEpisodes >= $seasonTotalEpisodes;
+                                                })->count();
+
+                                                $stats = $media['statistics'] ?? [];
+                                                $downloadedEpisodes = (int) ($stats['episodeFileCount'] ?? 0);
+                                                $totalEpisodes = (int) ($stats['episodeCount'] ?? $stats['totalEpisodeCount'] ?? 0);
+
+                                                $isCompleteSeries = $totalRegularSeasons > 0 && $completedRegularSeasons >= $totalRegularSeasons;
+                                                $isPartialSeries = ! $isCompleteSeries && ($completedRegularSeasons > 0 || $downloadedEpisodes > 0);
+                                                $statusColor = $isCompleteSeries ? 'text-green-500' : ($isPartialSeries ? 'text-yellow-500' : 'text-red-500');
+                                                $statusLabel = $isCompleteSeries ? __('messages.media_details_complete') : ($isPartialSeries ? __('messages.media_details_partial') : __('messages.media_details_missing'));
+                                            @endphp
+                                            <span class="text-sm font-bold {{ $statusColor }}">
+                                                {{ $statusLabel }}
+                                            </span>
+                                            <p class="text-[10px] text-zinc-500 mt-1">
+                                                {{ __('messages.media_details_seasons_without_specials', ['done' => $completedRegularSeasons, 'total' => $totalRegularSeasons > 0 ? $totalRegularSeasons : '?']) }}
+                                            </p>
+                                            <p class="text-[10px] text-zinc-500">
+                                                {{ $downloadedEpisodes }} / {{ $totalEpisodes > 0 ? $totalEpisodes : '?' }} épisodes
+                                            </p>
+                                        @else
+                                            <span class="text-sm font-bold {{ ($media['hasFile'] ?? false) ? 'text-green-500' : 'text-yellow-500' }}">
+                                                {{ ($media['hasFile'] ?? false) ? __('messages.available') : __('messages.missing') }}
+                                            </span>
+                                        @endif
                                     </div>
                                     @if($service === 'sonarr')
                                         <div class="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                                            <span class="text-[10px] font-bold text-zinc-400 uppercase block mb-1">Saisons</span>
+                                            <span class="text-[10px] font-bold text-zinc-400 uppercase block mb-1">{{ __('messages.media_details_tab_seasons') }}</span>
                                             <span class="text-sm font-bold text-zinc-900 dark:text-white">{{ count($media['seasons'] ?? []) }}</span>
                                         </div>
                                     @endif
@@ -371,35 +459,45 @@ new class extends Component
                                 @php $info = $this->getMediaInfo(); @endphp
                                 @if(!empty($info))
                                     <div class="space-y-3 pt-2">
-                                        <h4 class="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Détails Techniques</h4>
+                                        <h4 class="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{{ __('messages.media_details_technical_details') }}</h4>
                                         <div class="grid grid-cols-2 gap-y-4 gap-x-8">
                                             <div class="flex flex-col">
-                                                <span class="text-[9px] font-bold text-zinc-400 uppercase">Résolution</span>
+                                                <span class="text-[9px] font-bold text-zinc-400 uppercase">{{ __('messages.media_details_resolution') }}</span>
                                                 <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ $info['resolution'] ?? 'N/A' }}</span>
                                             </div>
                                             <div class="flex flex-col">
-                                                <span class="text-[9px] font-bold text-zinc-400 uppercase">Vidéo Codec</span>
+                                                <span class="text-[9px] font-bold text-zinc-400 uppercase">{{ __('messages.media_details_video_codec') }}</span>
                                                 <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ strtoupper($info['videoCodec'] ?? 'N/A') }} {{ $info['videoBitDepth'] ? $info['videoBitDepth'] . 'bits' : '' }}</span>
                                             </div>
                                             <div class="flex flex-col">
-                                                <span class="text-[9px] font-bold text-zinc-400 uppercase">Audio Codec</span>
+                                                <span class="text-[9px] font-bold text-zinc-400 uppercase">{{ __('messages.media_details_audio_codec') }}</span>
                                                 <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ strtoupper($info['audioCodec'] ?? 'N/A') }} ({{ $info['audioChannels'] ?? 'N/A' }})</span>
                                             </div>
                                             <div class="flex flex-col">
-                                                <span class="text-[9px] font-bold text-zinc-400 uppercase">Qualité du fichier</span>
+                                                <span class="text-[9px] font-bold text-zinc-400 uppercase">{{ __('messages.media_details_file_quality') }}</span>
                                                 <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ $this->getQualitySummary() ?: 'N/A' }}</span>
                                             </div>
                                         </div>
                                     </div>
                                 @endif
 
-                                <button wire:click="$dispatch('openInteractiveSearch', { mediaId: {{ $media['id'] }}, mediaTitle: '{{ addslashes($media['title']) }}', service: '{{ $service }}' })" 
-                                        wire:loading.attr="disabled"
-                                        class="w-full flex items-center justify-center gap-2 py-4 bg-core-primary/10 hover:bg-core-primary/20 text-core-primary rounded-2xl font-black text-sm transition group uppercase tracking-widest border border-core-primary/20 disabled:opacity-50">
-                                    <svg wire:loading.remove class="w-5 h-5 group-hover:animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                                    <svg wire:loading class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                                    Recherche Interactive Globale
-                                </button>
+                                @if($service !== 'sonarr')
+                                    <button wire:click="openInteractiveSearchGlobal"
+                                            wire:loading.attr="disabled"
+                                            wire:target="openInteractiveSearchGlobal"
+                                            @disabled($interactiveSearchLoading)
+                                            class="w-full flex items-center justify-center gap-2 py-4 bg-core-primary/10 hover:bg-core-primary/20 text-core-primary rounded-2xl font-black text-sm transition group uppercase tracking-widest border border-core-primary/20 disabled:opacity-50">
+                                        <svg wire:loading.remove wire:target="openInteractiveSearchGlobal" class="w-5 h-5 group-hover:animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                        <svg wire:loading wire:target="openInteractiveSearchGlobal" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                        @if($interactiveSearchLoading)
+                                            <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                            <span>Recherche en cours...</span>
+                                        @else
+                                            <span wire:loading.remove wire:target="openInteractiveSearchGlobal">{{ __('messages.media_details_interactive_search_global') }}</span>
+                                            <span wire:loading wire:target="openInteractiveSearchGlobal">{{ __('messages.media_details_search_in_progress') }}</span>
+                                        @endif
+                                    </button>
+                                @endif
                             </div>
                         @endif
 
@@ -421,17 +519,25 @@ new class extends Component
                                                 </div>
                                                 <div>
                                                     <p class="text-[13px] font-black text-zinc-900 dark:text-white uppercase tracking-tight">
-                                                        {{ $season['seasonNumber'] == 0 ? 'Spéciaux' : 'Saison ' . $season['seasonNumber'] }}
+                                                        {{ $season['seasonNumber'] == 0 ? __('messages.media_details_specials') : __('messages.media_details_season_number', ['number' => $season['seasonNumber']]) }}
                                                     </p>
                                                     <p class="text-[11px] text-zinc-500 font-bold">
-                                                        {{ $season['statistics']['episodeFileCount'] ?? 0 }} / {{ $season['statistics']['totalEpisodeCount'] ?? 0 }} épisodes
+                                                        {{ __('messages.media_details_episodes_ratio', ['done' => $season['statistics']['episodeFileCount'] ?? 0, 'total' => $season['statistics']['totalEpisodeCount'] ?? 0]) }}
                                                     </p>
                                                 </div>
                                             </div>
                                             <div class="flex items-center gap-2">
-                                                <button @click.stop="$dispatch('openInteractiveSearch', { mediaId: {{ $media['id'] }}, mediaTitle: '{{ addslashes($media['title']) }}', service: '{{ $service }}', seasonNumber: {{ $season['seasonNumber'] }} })" 
-                                                        class="p-2 bg-white dark:bg-zinc-800 rounded-xl text-core-primary hover:bg-core-primary hover:text-white transition shadow-sm border border-zinc-200 dark:border-zinc-700 disabled:opacity-50" title="Recherche interactive pour cette saison">
-                                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                                <button wire:click="openInteractiveSearchSeason({{ $season['seasonNumber'] }})"
+                                                        wire:loading.attr="disabled"
+                                                        wire:target="openInteractiveSearchSeason"
+                                                        @disabled($interactiveSearchLoading)
+                                                        class="p-2 bg-white dark:bg-zinc-800 rounded-xl text-core-primary hover:bg-core-primary hover:text-white transition shadow-sm border border-zinc-200 dark:border-zinc-700 disabled:opacity-50" title="{{ __('messages.media_details_interactive_search_season') }}">
+                                                    @if($interactiveSearchLoading)
+                                                        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                                    @else
+                                                        <svg wire:loading.remove wire:target="openInteractiveSearchSeason" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                                        <svg wire:loading wire:target="openInteractiveSearchSeason" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                                    @endif
                                                 </button>
                                                 <div class="hidden sm:flex flex-col items-end px-2">
                                                     <div class="w-20 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
@@ -451,24 +557,30 @@ new class extends Component
                                                         <span class="text-[10px] font-black text-zinc-400 w-6">{{ $episode['episodeNumber'] }}</span>
                                                         <div class="flex-1 min-w-0">
                                                             <p class="text-xs font-bold text-zinc-900 dark:text-white truncate">{{ $episode['title'] }}</p>
-                                                            <p class="text-[9px] text-zinc-500">{{ ($episode['airDate'] ?? null) ? \Carbon\Carbon::parse($episode['airDate'])->translatedFormat('d M Y') : 'Date inconnue' }}</p>
+                                                            <p class="text-[9px] text-zinc-500">{{ ($episode['airDate'] ?? null) ? \Carbon\Carbon::parse($episode['airDate'])->translatedFormat('d M Y') : __('messages.media_details_unknown_date') }}</p>
                                                         </div>
                                                         <div class="w-2 h-2 rounded-full {{ $episode['hasFile'] ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.4)]' }}"></div>
-                                                        <button wire:click="$dispatch('openInteractiveSearch', { mediaId: {{ $media['id'] }}, mediaTitle: '{{ addslashes($media['title']) }}', service: '{{ $service }}', episodeId: {{ $episode['id'] }} })" 
+                                                        <button wire:click="openInteractiveSearchEpisode({{ $episode['id'] }})"
                                                                 wire:loading.attr="disabled"
-                                                                class="p-1.5 text-zinc-400 hover:text-core-primary transition ml-1 disabled:opacity-50" title="Recherche interactive pour cet épisode">
-                                                            <svg wire:loading.remove class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                                                            <svg wire:loading class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                                                wire:target="openInteractiveSearchEpisode"
+                                                                @disabled($interactiveSearchLoading)
+                                                                class="p-1.5 text-zinc-400 hover:text-core-primary transition ml-1 disabled:opacity-50" title="{{ __('messages.media_details_interactive_search_episode') }}">
+                                                            @if($interactiveSearchLoading)
+                                                                <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                                            @else
+                                                                <svg wire:loading.remove wire:target="openInteractiveSearchEpisode" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                                                <svg wire:loading wire:target="openInteractiveSearchEpisode" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                                            @endif
                                                         </button>
                                                     </div>
                                                 @empty
-                                                    <p class="text-center py-4 text-xs text-zinc-500 italic">Aucun épisode trouvé.</p>
+                                                    <p class="text-center py-4 text-xs text-zinc-500 italic">{{ __('messages.media_details_no_episodes_found') }}</p>
                                                 @endforelse
                                             </div>
                                         </div>
                                     </div>
                                 @empty
-                                    <p class="text-center py-12 text-zinc-500 italic text-sm">Aucune saison trouvée.</p>
+                                    <p class="text-center py-12 text-zinc-500 italic text-sm">{{ __('messages.media_details_no_seasons_found') }}</p>
                                 @endforelse
                             </div>
                         @endif
@@ -499,7 +611,7 @@ new class extends Component
                                 @empty
                                     <div class="flex flex-col items-center justify-center py-12 text-zinc-500">
                                         <svg class="w-12 h-12 mb-4 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-                                        <p class="italic text-sm">Aucun fichier trouvé sur le disque.</p>
+                                        <p class="italic text-sm">{{ __('messages.media_details_no_files_found') }}</p>
                                     </div>
                                 @endforelse
                             </div>
@@ -523,7 +635,7 @@ new class extends Component
                                         </div>
                                     </div>
                                 @empty
-                                    <p class="text-center py-12 text-zinc-500 italic text-sm">Historique vide.</p>
+                                    <p class="text-center py-12 text-zinc-500 italic text-sm">{{ __('messages.media_details_empty_history') }}</p>
                                 @endforelse
                             </div>
                         @endif
@@ -532,7 +644,7 @@ new class extends Component
                         @if ($activeTab === 'edit')
                             <div wire:key="tab-edit-{{ $media['id'] }}" class="space-y-6">
                                  <div>
-                                     <h4 class="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">Profil de Qualité</h4>
+                                     <h4 class="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">{{ __('messages.media_details_quality_profile') }}</h4>
                                      <select wire:model="media.qualityProfileId" class="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-core-primary outline-none transition">
                                          @foreach($qualityProfiles as $profile)
                                              <option value="{{ $profile['id'] }}">{{ $profile['name'] }}</option>
@@ -543,8 +655,8 @@ new class extends Component
                                  <div class="pt-4">
                                      <button wire:click="toggleMonitored" class="w-full flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 group hover:border-core-primary/50 transition">
                                          <div class="text-left">
-                                             <span class="text-sm font-bold text-zinc-900 dark:text-white">Surveillance</span>
-                                             <p class="text-[10px] text-zinc-500">Activer/Désactiver le téléchargement automatique</p>
+                                             <span class="text-sm font-bold text-zinc-900 dark:text-white">{{ __('messages.media_details_monitoring') }}</span>
+                                             <p class="text-[10px] text-zinc-500">{{ __('messages.media_details_monitoring_hint') }}</p>
                                          </div>
                                          <div class="w-10 h-6 {{ ($media['monitored'] ?? false) ? 'bg-core-primary' : 'bg-zinc-300' }} rounded-full relative transition-colors">
                                              <div class="absolute top-1 {{ ($media['monitored'] ?? false) ? 'right-1' : 'left-1' }} w-4 h-4 bg-white rounded-full transition-all"></div>
@@ -554,7 +666,7 @@ new class extends Component
 
                                  <div class="pt-8">
                                      <button wire:click="toggleMonitored" class="w-full py-3 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold rounded-xl hover:opacity-90 transition">
-                                         Enregistrer les modifications
+                                         {{ __('messages.media_details_save_changes') }}
                                      </button>
                                  </div>
                             </div>

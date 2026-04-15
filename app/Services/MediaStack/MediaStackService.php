@@ -603,18 +603,40 @@ class MediaStackService
      */
     public function getReleases(string $service, int $mediaId, ?int $seasonNumber = null, ?int $episodeId = null): array
     {
-        $param = $service === 'radarr' ? 'movieId' : 'seriesId';
-        $endpoint = "release?$param=$mediaId";
+        $query = $service === 'radarr'
+            ? ['movieId' => $mediaId]
+            : ['seriesId' => $mediaId];
 
         if ($service === 'sonarr') {
-            if ($episodeId) {
-                $endpoint = "release?episodeId=$episodeId";
+            if ($episodeId !== null) {
+                $query['episodeId'] = $episodeId;
             } elseif ($seasonNumber !== null) {
-                $endpoint .= "&seasonNumber=$seasonNumber";
+                $query['seasonNumber'] = $seasonNumber;
             }
         }
 
-        return $this->request($service, 'GET', $endpoint);
+        $endpoint = 'release';
+        $settings = ServiceSetting::where('service_name', $service)->first();
+        $apiPrefix = $service === 'prowlarr' ? '/api/v1' : '/api/v3';
+        $baseUrl = $settings
+            ? rtrim((string) $settings->base_url, '/').$apiPrefix.'/'.ltrim($endpoint, '/')
+            : null;
+
+        if (! $settings || ! $baseUrl) {
+            return [];
+        }
+
+        $response = Http::withHeaders(['X-Api-Key' => $settings->api_key])->get($baseUrl, $query);
+
+        if (! $response->successful()) {
+            Log::error("MediaStack API Error ($service GET release): ".$response->status().' - '.$response->body());
+
+            return [];
+        }
+
+        $payload = $response->json() ?: [];
+
+        return is_array($payload) ? $payload : [];
     }
 
     /**

@@ -119,13 +119,25 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
             // Prevent PayloadTooLargeException: Only keep essential info for the list/grid
             return collect($response->json())
                 ->map(function ($item) {
+                    $statistics = $item['statistics'] ?? [];
+                    $episodeCount = (int) ($statistics['episodeCount'] ?? $statistics['totalEpisodeCount'] ?? 0);
+                    $episodeFileCount = (int) ($statistics['episodeFileCount'] ?? 0);
+                    $percentOfEpisodes = (float) ($statistics['percentOfEpisodes'] ?? 0);
+                    $sizeOnDisk = (int) ($statistics['sizeOnDisk'] ?? 0);
+
+                    $hasSeriesFiles = $episodeFileCount > 0
+                        && ($episodeCount === 0 || $episodeFileCount >= $episodeCount || $percentOfEpisodes >= 99.9);
+
+                    $hasFile = $item['hasFile']
+                        ?? ($sizeOnDisk > 0 || $hasSeriesFiles);
+
                     return [
                         'id' => $item['id'],
                         'title' => $item['title'],
                         'year' => $item['year'] ?? ($item['firstAired'] ? Carbon::parse($item['firstAired'])->year : ''),
                         'images' => $item['images'] ?? [],
                         'monitored' => $item['monitored'] ?? false,
-                        'hasFile' => $item['hasFile'] ?? (($item['statistics']['percentOfEpisodes'] ?? 0) === 100 ? true : false),
+                        'hasFile' => (bool) $hasFile,
                         'qualityProfileId' => $item['qualityProfileId'] ?? 0,
                         'studio' => $item['studio'] ?? ($item['network'] ?? ''),
                         'overview' => $item['overview'] ?? '',
@@ -377,6 +389,18 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
                     </div>
                 @endif
             </div>
+
+            <button wire:click="search"
+                wire:loading.attr="disabled"
+                wire:target="search"
+                class="cursor-pointer px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-500 hover:text-core-primary disabled:opacity-50 transition">
+                <svg wire:loading.remove wire:target="search" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <svg wire:loading wire:target="search" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+            </button>
 
             <button wire:click="toggleView"
                 class="p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition">
