@@ -204,6 +204,8 @@ return [
     'remember_me' => 'Se souvenir de moi',
     'forgot_password' => 'Mot de passe oublié ?',
     'login_button' => 'Connexion',
+    'login_rate_limited_title' => 'Trop de tentatives',
+    'login_failed_title' => 'Échec de connexion',
 
     // Cleanup
     'cleanup' => 'Nettoyage',

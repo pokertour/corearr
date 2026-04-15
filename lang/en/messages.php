@@ -204,6 +204,8 @@ return [
     'remember_me' => 'Remember me',
     'forgot_password' => 'Forgot password?',
     'login_button' => 'Login',
+    'login_rate_limited_title' => 'Too many attempts',
+    'login_failed_title' => 'Login failed',
 
     // Cleanup
     'cleanup' => 'Library Cleanup',

@@ -3,12 +3,16 @@
 use Livewire\Component;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use App\Models\User;
 
 new class extends Component {
     public string $email = '';
     public string $password = '';
     public bool $remember = false;
+    protected int $maxAttempts = 5;
+    protected int $decaySeconds = 60;
 
     public function login()
     {
@@ -17,9 +21,21 @@ new class extends Component {
             'password' => ['required'],
         ]);
 
+        $throttleKey = $this->throttleKey();
+
+        if (RateLimiter::tooManyAttempts($throttleKey, $this->maxAttempts)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+            $this->addError('email', trans('auth.throttle', ['seconds' => $seconds]));
+            $this->dispatch('notify', title: __('messages.login_rate_limited_title'), message: trans('auth.throttle', ['seconds' => $seconds]), type: 'error');
+
+            return;
+        }
+
         $user = User::where('email', $this->email)->first();
 
         if ($user && Hash::check($this->password, $user->password)) {
+            RateLimiter::clear($throttleKey);
+
             // Check if 2FA is enabled AND confirmed
             if ($user->two_factor_secret && $user->two_factor_confirmed_at) {
                 session()->put('login.id', $user->id);
@@ -35,8 +51,14 @@ new class extends Component {
             return redirect()->intended('/dashboard');
         }
 
+        RateLimiter::hit($throttleKey, $this->decaySeconds);
         $this->addError('email', trans('auth.failed'));
-        $this->dispatch('notify', title: 'Échec de connexion', message: 'Identifiants incorrects.', type: 'error');
+        $this->dispatch('notify', title: __('messages.login_failed_title'), message: __('auth.failed'), type: 'error');
+    }
+
+    protected function throttleKey(): string
+    {
+        return Str::lower($this->email).'|'.request()->ip();
     }
 };
 
