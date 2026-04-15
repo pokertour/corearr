@@ -74,7 +74,7 @@ The project includes a production-ready `docker-compose.yml` that handles both t
 mkdir corearr && cd corearr
 
 # Download the configuration
-wget https://raw.githubusercontent.com/pokertour/corearr/main/docker-compose.yml
+wget https://raw.githubusercontent.com/pokertour/corearr/main/docker-compose.yml && wget https://raw.githubusercontent.com/pokertour/corearr/main/.env.example -O .env
 
 mkdir database
 touch database/database.sqlite
