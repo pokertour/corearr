@@ -27,7 +27,6 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
     public array $speedHistory = [];
     public array $torrentStateStats = [];
     public array $requestPipelineStats = [];
-    public array $fulfillmentStats = [];
     public array $indexerHealthStats = [];
     public array $dashboardPreferences = [
         'widgets' => [],
@@ -53,7 +52,6 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
         'ops_speed_24h' => 'messages.dashboard_widget_ops_speed_24h',
         'ops_torrent_states' => 'messages.dashboard_widget_ops_torrent_states',
         'ops_request_pipeline' => 'messages.dashboard_widget_ops_request_pipeline',
-        'ops_fulfillment_time' => 'messages.dashboard_widget_ops_fulfillment_time',
         'ops_indexer_health' => 'messages.dashboard_widget_ops_indexer_health',
     ];
 
@@ -98,10 +96,6 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
         if ($this->jellyseerrConfigured) {
             $this->jellyStats = $jellyseerr->getRequestCounts();
             $this->requestPipelineStats = $this->buildRequestPipelineStats();
-            $recentRequests = $jellyseerr->getRequests(100, 0, 'all');
-            $requestResults = $recentRequests['results'] ?? [];
-            $this->fulfillmentStats = $this->buildFulfillmentStats($requestResults);
-
             if (empty($this->jellyStats)) {
                 $downServices[] = 'Jellyseerr';
             }
@@ -257,7 +251,6 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
             'media_users', 'media_top_users' => $this->mediaServicesConfigured,
             'ops_speed_24h', 'ops_torrent_states' => $this->qbitConfigured,
             'ops_request_pipeline' => $this->jellyseerrConfigured,
-            'ops_fulfillment_time' => $this->jellyseerrConfigured,
             'ops_indexer_health' => $this->isServiceConfigured('prowlarr'),
             default => false,
         };
@@ -313,12 +306,14 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
 
             if (str_contains($state, 'downloading') || str_contains($state, 'meta')) {
                 $stats['downloading']++;
+            } elseif (str_contains($state, 'stalledup')) {
+                $stats['seeding']++;
+            } elseif (str_contains($state, 'stalleddl')) {
+                $stats['stalled']++;
             } elseif (str_contains($state, 'upload') || str_contains($state, 'seed')) {
                 $stats['seeding']++;
             } elseif (str_contains($state, 'pause')) {
                 $stats['paused']++;
-            } elseif (str_contains($state, 'stalled')) {
-                $stats['stalled']++;
             } else {
                 $stats['other']++;
             }
@@ -334,46 +329,6 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
             'available' => (int) ($this->jellyStats['available'] ?? 0),
             'completed' => (int) ($this->jellyStats['completed'] ?? 0),
             'total' => (int) ($this->jellyStats['total'] ?? 0),
-        ];
-    }
-
-    protected function buildFulfillmentStats(array $requests): array
-    {
-        $durationsInHours = [];
-        $completedCount = 0;
-
-        foreach ($requests as $request) {
-            $status = (int) ($request['media']['status'] ?? 0);
-            if (! in_array($status, [4, 5], true)) {
-                continue;
-            }
-
-            $createdAt = isset($request['createdAt']) ? strtotime((string) $request['createdAt']) : null;
-            $updatedAt = isset($request['updatedAt']) ? strtotime((string) $request['updatedAt']) : null;
-
-            if (! $createdAt || ! $updatedAt || $updatedAt < $createdAt) {
-                continue;
-            }
-
-            $durationsInHours[] = ($updatedAt - $createdAt) / 3600;
-            $completedCount++;
-        }
-
-        if (empty($durationsInHours)) {
-            return [
-                'avg_hours' => null,
-                'p90_hours' => null,
-                'completed' => 0,
-            ];
-        }
-
-        sort($durationsInHours);
-        $p90Index = (int) floor((count($durationsInHours) - 1) * 0.9);
-
-        return [
-            'avg_hours' => round(array_sum($durationsInHours) / count($durationsInHours), 1),
-            'p90_hours' => round($durationsInHours[$p90Index], 1),
-            'completed' => $completedCount,
         ];
     }
 
@@ -504,34 +459,44 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
                         'jellyseerr_completed' => ['source' => __('messages.jellyseerr'), 'label' => __('messages.completed'), 'value' => $jellyStats['completed'] ?? 0, 'icon' => 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 'color' => 'green'],
                     ];
                     $arrCards = [
-                        'arr_radarr' => ['service' => 'radarr', 'label' => __('messages.movies'), 'color' => 'indigo', 'icon' => 'M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z'],
-                        'arr_sonarr' => ['service' => 'sonarr', 'label' => __('messages.series'), 'color' => 'yellow', 'icon' => 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z'],
-                        'arr_prowlarr' => ['service' => 'prowlarr', 'label' => __('messages.indexers'), 'color' => 'pink', 'icon' => 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'],
+                        'arr_radarr' => ['service' => 'radarr', 'label' => __('messages.movies'), 'iconBgClass' => 'bg-indigo-500/10', 'iconTextClass' => 'text-indigo-500', 'hoverBorderClass' => 'hover:border-indigo-500/50', 'icon' => 'M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z'],
+                        'arr_sonarr' => ['service' => 'sonarr', 'label' => __('messages.series'), 'iconBgClass' => 'bg-yellow-500/10', 'iconTextClass' => 'text-yellow-500', 'hoverBorderClass' => 'hover:border-yellow-500/50', 'icon' => 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z'],
+                        'arr_prowlarr' => ['service' => 'prowlarr', 'label' => __('messages.indexers'), 'iconBgClass' => 'bg-pink-500/10', 'iconTextClass' => 'text-pink-500', 'hoverBorderClass' => 'hover:border-pink-500/50', 'icon' => 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'],
                     ];
                 @endphp
 
                 @if (isset($statCards[$widgetKey]))
-                    @php $card = $statCards[$widgetKey]; @endphp
-                    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl shadow-sm transition duration-300 group">
-                        <div class="flex items-center gap-3 mb-2">
-                            <div class="w-8 h-8 rounded-lg bg-{{ $card['color'] }}-500/10 flex items-center justify-center text-{{ $card['color'] }}-500 group-hover:scale-110 transition-transform">
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $card['icon'] }}" />
-                                </svg>
+                    @php
+                        $card = $statCards[$widgetKey];
+                        $isCorePrimary = $card['color'] === 'core-primary';
+                        $iconBgClass = $isCorePrimary ? 'bg-core-primary/10' : 'bg-' . $card['color'] . '-500/10';
+                        $iconTextClass = $isCorePrimary ? 'text-core-primary' : 'text-' . $card['color'] . '-500';
+                        $hoverBorderClass = $isCorePrimary ? 'hover:border-core-primary/50' : 'hover:border-' . $card['color'] . '-500/50';
+                    @endphp
+                    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm {{ $hoverBorderClass }} transition duration-300 relative group">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl {{ $iconBgClass }} flex items-center justify-center {{ $iconTextClass }} group-hover:scale-110 transition-transform">
+                                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $card['icon'] }}" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <span class="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{{ $card['source'] }}</span>
+                                    <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ $card['label'] }}</h4>
+                                </div>
                             </div>
-                            <div>
-                                <span class="text-[9px] font-black text-zinc-400 uppercase tracking-widest block leading-none">{{ $card['source'] }}</span>
-                                <span class="text-[11px] font-bold text-zinc-500 uppercase tracking-tight">{{ $card['label'] }}</span>
+                            <div class="flex flex-col items-end">
+                                <span class="text-2xl font-black text-zinc-900 dark:text-white">{{ $card['value'] }}</span>
                             </div>
                         </div>
-                        <div class="text-xl font-black text-zinc-900 dark:text-zinc-100 italic tracking-tighter">{{ $card['value'] }}</div>
                     </div>
                 @elseif (isset($arrCards[$widgetKey]))
                     @php $cfg = $arrCards[$widgetKey]; $serviceId = $cfg['service']; @endphp
-                    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm hover:border-{{ $cfg['color'] }}-500/50 transition duration-300 relative group">
+                    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm {{ $cfg['hoverBorderClass'] }} transition duration-300 relative group">
                         <div class="flex items-center justify-between mb-4">
                             <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-xl bg-{{ $cfg['color'] }}-500/10 flex items-center justify-center text-{{ $cfg['color'] }}-500 group-hover:scale-110 transition-transform">
+                                <div class="w-10 h-10 rounded-xl {{ $cfg['iconBgClass'] }} flex items-center justify-center {{ $cfg['iconTextClass'] }} group-hover:scale-110 transition-transform">
                                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $cfg['icon'] }}" />
                                     </svg>
@@ -572,6 +537,8 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
                         <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_qbit_cache') }}</p>
                         @if ($qbitConfigured && !empty($speedHistory))
                             @php
+                                $graphWidth = 340;
+                                $graphHeight = 90;
                                 $dlValues = array_map(fn ($sample) => (int) ($sample['dl'] ?? 0), $speedHistory);
                                 $ulValues = array_map(fn ($sample) => (int) ($sample['ul'] ?? 0), $speedHistory);
                                 $maxValue = max(max($dlValues), max($ulValues), 1);
@@ -585,11 +552,80 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
                                     }
                                     return implode(' ', $points);
                                 };
+                                $buildPoints = function (array $values, int $height = 90, int $width = 340) use ($maxValue) {
+                                    $count = max(count($values) - 1, 1);
+                                    $points = [];
+                                    foreach ($values as $index => $value) {
+                                        $x = round(($index / $count) * $width, 2);
+                                        $y = round($height - (($value / $maxValue) * $height), 2);
+                                        $points[] = ['x' => $x, 'y' => $y];
+                                    }
+                                    return $points;
+                                };
+                                $dlPoints = $buildPoints($dlValues, $graphHeight, $graphWidth);
+                                $ulPoints = $buildPoints($ulValues, $graphHeight, $graphWidth);
+                                $hoverSamples = array_map(function ($sample) {
+                                    $timestamp = (int) ($sample['ts'] ?? now()->timestamp);
+                                    return [
+                                        'time' => \Carbon\Carbon::createFromTimestamp($timestamp)->format('H:i'),
+                                        'dl' => $this->formatSize((int) ($sample['dl'] ?? 0)) . '/s',
+                                        'ul' => $this->formatSize((int) ($sample['ul'] ?? 0)) . '/s',
+                                    ];
+                                }, $speedHistory);
                             @endphp
-                            <svg viewBox="0 0 340 90" class="w-full h-28 mb-3">
-                                <polyline fill="none" stroke="rgb(59 130 246)" stroke-width="2.5" points="{{ $buildPolyline($dlValues) }}" />
-                                <polyline fill="none" stroke="rgb(20 184 166)" stroke-width="2.5" points="{{ $buildPolyline($ulValues) }}" />
-                            </svg>
+                            <div
+                                class="relative mb-3"
+                                x-data="{
+                                    width: {{ $graphWidth }},
+                                    dlPoints: @js($dlPoints),
+                                    ulPoints: @js($ulPoints),
+                                    samples: @js($hoverSamples),
+                                    activeIndex: null,
+                                    setActive(event) {
+                                        const rect = event.currentTarget.getBoundingClientRect();
+                                        const x = Math.max(0, Math.min(this.width, ((event.clientX - rect.left) / rect.width) * this.width));
+                                        let nearest = 0;
+                                        let minDistance = Infinity;
+                                        this.dlPoints.forEach((point, index) => {
+                                            const distance = Math.abs(point.x - x);
+                                            if (distance < minDistance) {
+                                                minDistance = distance;
+                                                nearest = index;
+                                            }
+                                        });
+                                        this.activeIndex = nearest;
+                                    }
+                                }"
+                                @mousemove="setActive($event)"
+                                @mouseleave="activeIndex = null"
+                            >
+                                <svg viewBox="0 0 {{ $graphWidth }} {{ $graphHeight }}" preserveAspectRatio="none" class="w-full h-28">
+                                    <polyline fill="none" stroke="rgb(59 130 246)" stroke-width="2.5" points="{{ $buildPolyline($dlValues, $graphHeight, $graphWidth) }}" />
+                                    <polyline fill="none" stroke="rgb(20 184 166)" stroke-width="2.5" points="{{ $buildPolyline($ulValues, $graphHeight, $graphWidth) }}" />
+
+                                    <template x-if="activeIndex !== null">
+                                        <g>
+                                            <line x1="0" y1="0" x2="0" y2="{{ $graphHeight }}" stroke="rgb(148 163 184)" stroke-width="1" stroke-dasharray="3 3"
+                                                  :x1="dlPoints[activeIndex].x" :x2="dlPoints[activeIndex].x"></line>
+                                            <circle r="4" fill="rgb(59 130 246)" stroke="white" stroke-width="1.5"
+                                                    :cx="dlPoints[activeIndex].x" :cy="dlPoints[activeIndex].y"></circle>
+                                            <circle r="4" fill="rgb(20 184 166)" stroke="white" stroke-width="1.5"
+                                                    :cx="ulPoints[activeIndex].x" :cy="ulPoints[activeIndex].y"></circle>
+                                        </g>
+                                    </template>
+                                </svg>
+
+                                <template x-if="activeIndex !== null">
+                                    <div
+                                        class="absolute z-10 -translate-y-full mb-1 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 shadow text-[10px] font-bold text-zinc-700 dark:text-zinc-200 whitespace-nowrap pointer-events-none"
+                                        :style="`left: calc(${(dlPoints[activeIndex].x / width) * 100}% - 45px); top: 0;`"
+                                    >
+                                        <p class="text-zinc-500" x-text="samples[activeIndex].time"></p>
+                                        <p class="text-blue-600 dark:text-blue-400">DL: <span x-text="samples[activeIndex].dl"></span></p>
+                                        <p class="text-teal-600 dark:text-teal-400">UL: <span x-text="samples[activeIndex].ul"></span></p>
+                                    </div>
+                                </template>
+                            </div>
                             <div class="grid grid-cols-2 gap-3 text-xs">
                                 <div class="rounded-xl border border-blue-200/60 dark:border-blue-500/20 bg-blue-50/60 dark:bg-blue-500/5 p-3">
                                     <p class="font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">DL</p>
@@ -672,26 +708,6 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
                             </div>
                         @else
                             <p class="text-sm text-zinc-500">{{ __('messages.not_configured_title', ['service' => 'Jellyseerr']) }}</p>
-                        @endif
-                    </div>
-                @elseif ($widgetKey === 'ops_fulfillment_time')
-                    <div class="xl:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                        <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('messages.ops_fulfillment_time_title') }}</h4>
-                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_jellyseerr_recent') }}</p>
-                        @if ($jellyseerrConfigured && !empty($fulfillmentStats) && $fulfillmentStats['avg_hours'] !== null)
-                            <div class="grid grid-cols-2 gap-3">
-                                <div class="rounded-xl border border-blue-200/60 dark:border-blue-500/20 bg-blue-50/60 dark:bg-blue-500/5 p-3">
-                                    <p class="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400">{{ __('messages.ops_avg') }}</p>
-                                    <p class="text-xl font-black text-zinc-900 dark:text-zinc-100">{{ $fulfillmentStats['avg_hours'] }}h</p>
-                                </div>
-                                <div class="rounded-xl border border-purple-200/60 dark:border-purple-500/20 bg-purple-50/60 dark:bg-purple-500/5 p-3">
-                                    <p class="text-[10px] font-bold uppercase tracking-widest text-purple-600 dark:text-purple-400">P90</p>
-                                    <p class="text-xl font-black text-zinc-900 dark:text-zinc-100">{{ $fulfillmentStats['p90_hours'] }}h</p>
-                                </div>
-                            </div>
-                            <p class="mt-3 text-xs text-zinc-500">{{ __('messages.ops_based_on_completed', ['count' => $fulfillmentStats['completed']]) }}</p>
-                        @else
-                            <p class="text-sm text-zinc-500">{{ __('messages.ops_no_data') }}</p>
                         @endif
                     </div>
                 @elseif ($widgetKey === 'ops_indexer_health')

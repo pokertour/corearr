@@ -8,9 +8,14 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use Livewire\WithPagination;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 
 new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends Component
 {
+    use WithPagination;
+
     #[Url]
     public string $viewMode = 'grid';
 
@@ -36,10 +41,6 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
     public string $activeTab = 'movies';
 
     public int $perPage = 18;
-
-    public int $movieLimit = 18;
-
-    public int $seriesLimit = 18;
 
     public bool $radarrConfigured = false;
 
@@ -74,6 +75,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
     {
         if (in_array($name, ['sortBy', 'filterMonitored', 'filterStatus', 'filterGenre', 'filterQuality'])) {
             session(['media_'.$name => $value]);
+            $this->resetPage();
         }
     }
 
@@ -220,6 +222,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
         $this->updateAvailableGenres();
         $this->filterGenre = 'all';
         $this->filterQuality = 'all';
+        $this->resetPage();
     }
 
     public function clearFilters()
@@ -232,20 +235,26 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
         $this->searchQuery = '';
 
         session()->forget(['media_sortBy', 'media_filterMonitored', 'media_filterStatus', 'media_filterGenre', 'media_filterQuality']);
-    }
-
-    public function loadMore()
-    {
-        if ($this->activeTab === 'movies') {
-            $this->movieLimit += $this->perPage;
-        } else {
-            $this->seriesLimit += $this->perPage;
-        }
+        $this->resetPage();
     }
 
     public function toggleView()
     {
         $this->viewMode = $this->viewMode === 'grid' ? 'list' : 'grid';
+    }
+
+    public function getPaginatedMediaProperty(): LengthAwarePaginator
+    {
+        $filtered = collect($this->getFilteredMedia());
+        $page = $this->getPage();
+
+        return new LengthAwarePaginator(
+            $filtered->forPage($page, $this->perPage)->values(),
+            $filtered->count(),
+            $this->perPage,
+            $page,
+            ['path' => Paginator::resolveCurrentPath()]
+        );
     }
 
     public function search()
@@ -476,10 +485,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
     </div>
 
     @php
-        $filtered = $this->getFilteredMedia();
-        $limit = $activeTab === 'movies' ? $movieLimit : $seriesLimit;
-        $list = array_slice($filtered, 0, $limit);
-        $hasMore = count($filtered) > $limit;
+        $list = $this->paginatedMedia;
         $serviceName = $activeTab === 'movies' ? 'radarr' : 'sonarr';
         $configured = $activeTab === 'movies' ? $radarrConfigured : $sonarrConfigured;
     @endphp
@@ -577,14 +583,9 @@ new #[Layout('components.layouts.app')] #[Title('messages.media')] class extends
             </div>
         @endif
 
-        @if ($hasMore)
-            <div class="flex justify-center pt-8">
-                <button wire:click="loadMore"
-                    class="px-8 py-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition shadow-sm">
-                    {{ __('messages.load_more', ['type' => $activeTab === 'movies' ? __('messages.films') : __('messages.series')]) }}
-                </button>
-            </div>
-        @endif
+        <div class="mt-6">
+            <flux:pagination :paginator="$this->paginatedMedia" class="[&>nav]:text-sm [&_button]:text-sm [&_button]:min-h-10 [&_button]:min-w-10 [&_a]:text-sm [&_a]:min-h-10 [&_a]:min-w-10" />
+        </div>
     @endif
 
     @livewire('components.media-details')

@@ -45,6 +45,18 @@ new #[Lazy] class extends Component {
         $i = floor(log($bytes, 1024));
         return round($bytes / pow(1024, $i), 1) . ' ' . $units[$i];
     }
+
+    public function ratioColorStyle(float $ratio): string
+    {
+        if ($ratio < 1.0) {
+            return '';
+        }
+
+        $progress = min(max(($ratio - 1.0) / 4.0, 0), 1);
+        $hue = 40 + (100 * $progress);
+
+        return "color: hsl({$hue}, 85%, 45%);";
+    }
 };
 
 ?>
@@ -88,8 +100,10 @@ new #[Lazy] class extends Component {
                                 {{ $torrent['name'] }}
                             </p>
                             <div class="flex items-center gap-2 mt-0.5">
-                                <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">
-                                    {{ __('messages.ratio') }}: {{ round($torrent['ratio'] ?? 0, 2) }}
+                                @php $ratio = (float) ($torrent['ratio'] ?? 0); @endphp
+                                <span class="text-[9px] font-bold uppercase tracking-tighter {{ $ratio < 1.0 ? 'text-red-500 dark:text-red-400' : '' }}"
+                                      style="{{ $this->ratioColorStyle($ratio) }}">
+                                    {{ __('messages.ratio') }}: {{ round($ratio, 2) }}
                                 </span>
                                 @if(($torrent['upspeed'] ?? 0) > 0)
                                     <span class="w-0.5 h-0.5 bg-zinc-300 dark:bg-zinc-700 rounded-full"></span>

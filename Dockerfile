@@ -73,6 +73,7 @@ ENV APP_ENV="production"
 ENV APP_DEBUG="false"
 ENV APP_NAME="CoreArr"
 ARG APP_VERSION=dev
+RUN echo "${APP_VERSION}" > /etc/corearr_version
 ENV APP_VERSION=${APP_VERSION}
 
 # FrankenPHP utilise le port 80 par défaut

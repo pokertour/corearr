@@ -25,7 +25,10 @@ new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attribute
     {
         $this->loading = true;
         $service = new MediaStackService();
-        $this->indexers = $service->getIndexers();
+        $this->indexers = collect($service->getIndexers())
+            ->sortBy(fn (array $indexer) => (int) ($indexer['priority'] ?? 25))
+            ->values()
+            ->all();
         $this->loading = false;
     }
 

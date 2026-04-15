@@ -260,15 +260,15 @@ new class extends Component
     public function getQualityProfileName(): string
     {
         if (! $this->media || empty($this->qualityProfiles)) {
-            return 'Auto';
+            return __('messages.media_details_auto');
         }
 
         $id = $this->media['qualityProfileId'] ?? null;
         if (! $id) {
-            return 'Auto';
+            return __('messages.media_details_auto');
         }
 
-        return collect($this->qualityProfiles)->firstWhere('id', $id)['name'] ?? 'Auto';
+        return collect($this->qualityProfiles)->firstWhere('id', $id)['name'] ?? __('messages.media_details_auto');
     }
 };
 
@@ -390,7 +390,7 @@ new class extends Component
                         <div wire:loading.delay class="absolute inset-0 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-[1px] z-50 flex flex-col items-center justify-center">
                             <div class="flex flex-col items-center space-y-3">
                                 <div class="w-8 h-8 border-3 border-core-primary border-t-transparent rounded-full animate-spin"></div>
-                                <p class="text-[10px] font-black text-core-primary uppercase tracking-widest animate-pulse">Chargement...</p>
+                                <p class="text-[10px] font-black text-core-primary uppercase tracking-widest animate-pulse">{{ __('messages.loading') }}</p>
                             </div>
                         </div>
 
@@ -463,19 +463,19 @@ new class extends Component
                                         <div class="grid grid-cols-2 gap-y-4 gap-x-8">
                                             <div class="flex flex-col">
                                                 <span class="text-[9px] font-bold text-zinc-400 uppercase">{{ __('messages.media_details_resolution') }}</span>
-                                                <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ $info['resolution'] ?? 'N/A' }}</span>
+                                                <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ $info['resolution'] ?? __('messages.media_details_na') }}</span>
                                             </div>
                                             <div class="flex flex-col">
                                                 <span class="text-[9px] font-bold text-zinc-400 uppercase">{{ __('messages.media_details_video_codec') }}</span>
-                                                <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ strtoupper($info['videoCodec'] ?? 'N/A') }} {{ $info['videoBitDepth'] ? $info['videoBitDepth'] . 'bits' : '' }}</span>
+                                                <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ strtoupper($info['videoCodec'] ?? __('messages.media_details_na')) }} {{ $info['videoBitDepth'] ? $info['videoBitDepth'] . 'bits' : '' }}</span>
                                             </div>
                                             <div class="flex flex-col">
                                                 <span class="text-[9px] font-bold text-zinc-400 uppercase">{{ __('messages.media_details_audio_codec') }}</span>
-                                                <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ strtoupper($info['audioCodec'] ?? 'N/A') }} ({{ $info['audioChannels'] ?? 'N/A' }})</span>
+                                                <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ strtoupper($info['audioCodec'] ?? __('messages.media_details_na')) }} ({{ $info['audioChannels'] ?? __('messages.media_details_na') }})</span>
                                             </div>
                                             <div class="flex flex-col">
                                                 <span class="text-[9px] font-bold text-zinc-400 uppercase">{{ __('messages.media_details_file_quality') }}</span>
-                                                <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ $this->getQualitySummary() ?: 'N/A' }}</span>
+                                                <span class="text-xs font-bold text-zinc-700 dark:text-zinc-300">{{ $this->getQualitySummary() ?: __('messages.media_details_na') }}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -491,7 +491,7 @@ new class extends Component
                                         <svg wire:loading wire:target="openInteractiveSearchGlobal" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                                         @if($interactiveSearchLoading)
                                             <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                                            <span>Recherche en cours...</span>
+                                            <span>{{ __('messages.media_details_search_in_progress') }}</span>
                                         @else
                                             <span wire:loading.remove wire:target="openInteractiveSearchGlobal">{{ __('messages.media_details_interactive_search_global') }}</span>
                                             <span wire:loading wire:target="openInteractiveSearchGlobal">{{ __('messages.media_details_search_in_progress') }}</span>
@@ -594,7 +594,7 @@ new class extends Component
                                             <div class="min-w-0 flex-1">
                                                 <p class="text-[11px] font-bold text-zinc-900 dark:text-white line-clamp-2 break-all leading-tight">{{ $file['relativePath'] ?? 'Nom inconnu' }}</p>
                                                 <div class="flex flex-wrap gap-2 mt-2">
-                                                    <span class="text-[9px] font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-1.5 py-0.5 rounded uppercase">{{ $file['quality']['quality']['name'] ?? 'N/A' }}</span>
+                                                    <span class="text-[9px] font-black bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-1.5 py-0.5 rounded uppercase">{{ $file['quality']['quality']['name'] ?? __('messages.media_details_na') }}</span>
                                                     @if(isset($file['mediaInfo']['videoCodec']))
                                                         <span class="text-[9px] font-black bg-core-primary/10 text-core-primary px-1.5 py-0.5 rounded uppercase">{{ $file['mediaInfo']['videoCodec'] }}</span>
                                                     @endif

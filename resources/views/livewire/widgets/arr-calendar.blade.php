@@ -42,13 +42,21 @@ new #[Lazy] class extends Component {
 ?>
 
 <div wire:init="loadData" class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm h-full overflow-hidden">
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center justify-between mb-5">
         <div class="flex items-center gap-3">
             <div class="w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-500">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
             </div>
-            <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Calendrier</h3>
+            <div>
+                <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Calendrier</h3>
+                <p class="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Prochaines sorties</p>
+            </div>
         </div>
+        @if(!empty($upcoming))
+            <span class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                {{ count($upcoming) }} à venir
+            </span>
+        @endif
     </div>
 
     @if(!$isConfigured)
@@ -61,28 +69,29 @@ new #[Lazy] class extends Component {
             <p class="text-sm">Rien de prévu pour le moment.</p>
         </div>
     @else
-        <div class="space-y-4">
+        <div class="space-y-2.5">
             @foreach($upcoming as $item)
-                <div class="flex items-center gap-3 group">
-                    <div class="flex flex-col items-center justify-center w-12 h-12 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/30">
-                        <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">{{ \Carbon\Carbon::parse($item['airDate'] ?? $item['physicalRelease'] ?? 'now')->translatedFormat('M') }}</span>
-                        <span class="text-sm font-black text-zinc-900 dark:text-zinc-100 leading-none">{{ \Carbon\Carbon::parse($item['airDate'] ?? $item['physicalRelease'] ?? 'now')->format('d') }}</span>
+                @php
+                    $releaseDate = \Carbon\Carbon::parse($item['airDate'] ?? $item['physicalRelease'] ?? 'now');
+                    $isSonarr = ($item['_source'] ?? '') === 'sonarr';
+                @endphp
+                <div class="flex items-start gap-3 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-800/30 hover:border-teal-500/40 transition group">
+                    <div class="flex flex-col items-center justify-center w-12 h-12 shrink-0 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+                        <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">{{ $releaseDate->translatedFormat('M') }}</span>
+                        <span class="text-sm font-black text-zinc-900 dark:text-zinc-100 leading-none">{{ $releaseDate->format('d') }}</span>
                     </div>
                     <div class="flex-1 min-w-0">
-                         <div class="flex items-center gap-2 mb-0.5">
-                             <span class="px-1.5 py-0.5 text-[8px] font-black uppercase rounded {{ $item['_source'] === 'sonarr' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-500' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' }}">
+                         <div class="flex items-center gap-2 mb-1">
+                             <span class="px-1.5 py-0.5 text-[8px] font-black uppercase rounded {{ $isSonarr ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-500' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' }}">
                                  {{ $item['_source'] }}
                              </span>
-                             <p class="text-[13px] font-bold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-core-primary transition cursor-help" title="{{ $item['title'] }}">
-                                 @if($item['_source'] === 'sonarr')
-                                     <span class="text-zinc-500 font-medium">{{ $item['series']['title'] ?? 'The Rookie' }} -</span>
-                                 @endif
+                             <p class="text-[13px] font-bold text-zinc-900 dark:text-zinc-100 truncate group-hover:text-core-primary transition cursor-help leading-tight" title="{{ $item['title'] }}">
                                  {{ $item['title'] }}
                              </p>
                          </div>
-                         <p class="text-[10px] text-zinc-500 truncate">
-                             @if($item['_source'] === 'sonarr')
-                                 S{{ str_pad($item['seasonNumber'], 2, '0', STR_PAD_LEFT) }}E{{ str_pad($item['episodeNumber'], 2, '0', STR_PAD_LEFT) }} &bull; {{ $item['series']['title'] ?? '' }}
+                         <p class="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 truncate">
+                             @if($isSonarr)
+                                 {{ $item['series']['title'] ?? '' }} &bull; S{{ str_pad((string) ($item['seasonNumber'] ?? 0), 2, '0', STR_PAD_LEFT) }}E{{ str_pad((string) ($item['episodeNumber'] ?? 0), 2, '0', STR_PAD_LEFT) }}
                              @else
                                  {{ $item['status'] ?? 'Release' }}
                              @endif

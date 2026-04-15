@@ -96,6 +96,9 @@ Your `.env` file must contain these essential variables:
 # Launch the stack
 docker compose up -d
 ```
+
+Get the default user in the docker log
+
 #### 3. Image Registry (GHCR)
 A pre-built, optimized image is available on the **GitHub Container Registry**:
 

@@ -21,6 +21,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
     // Filtering & Sorting
     public string $search = '';
     public string $filterState = 'all';
+    public string $filterTracker = 'all';
     public string $sortBy = 'added_on';
     public string $sortDir = 'desc';
 
@@ -52,6 +53,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
 
     public function updatedSearch() { $this->resetPage(); }
     public function updatedFilterState() { $this->resetPage(); }
+    public function updatedFilterTracker() { $this->resetPage(); }
     public function updatedSortBy() { $this->resetPage(); }
 
     public function refreshTorrents(MediaStackService $service)
@@ -86,6 +88,14 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                     'completed' => ($t['progress'] ?? 0) >= 1,
                     default => true,
                 };
+            });
+        }
+
+        // Filter by tracker host
+        if ($this->filterTracker !== 'all') {
+            $filtered = $filtered->filter(function ($t) {
+                $host = parse_url($t['tracker'] ?? '', PHP_URL_HOST) ?: ($t['tracker'] ?? '');
+                return strtolower($host) === strtolower($this->filterTracker);
             });
         }
 
@@ -198,10 +208,51 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
         $hours = floor($minutes / 60);
         return $hours . 'h ' . ($minutes % 60) . 'm';
     }
+
+    public function ratioColorStyle(float $ratio): string
+    {
+        if ($ratio < 1.0) {
+            return '';
+        }
+
+        // Map 1.0 -> 0 and 5.0+ -> 1 to build a smooth color ramp.
+        $progress = min(max(($ratio - 1.0) / 4.0, 0), 1);
+
+        // Hue goes from amber (40) to green (140).
+        $hue = 40 + (100 * $progress);
+
+        return "color: hsl({$hue}, 85%, 45%);";
+    }
+
+    public function displayTorrentState(string $state): string
+    {
+        $normalizedState = strtolower($state);
+
+        if ($normalizedState === 'stalledup') {
+            return 'seeding';
+        }
+
+        if ($normalizedState === 'stalleddl') {
+            return 'Stalled';
+        }
+
+        return str_replace('_', ' ', $normalizedState);
+    }
+
+    public function getTrackerHostsProperty(): array
+    {
+        return collect($this->torrents)
+            ->map(fn ($t) => parse_url($t['tracker'] ?? '', PHP_URL_HOST) ?: ($t['tracker'] ?? ''))
+            ->filter(fn ($tracker) => filled($tracker))
+            ->map(fn ($tracker) => (string) $tracker)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
 };
 
 ?>
-
 <div class="space-y-6">
     @if(!$isConfigured)
         <div class="flex flex-col items-center justify-center py-20 bg-white dark:bg-zinc-900 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl text-center">
@@ -258,6 +309,13 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                     <option value="completed">{{ __('messages.completed') }}</option>
                 </select>
 
+                <select wire:model.live="filterTracker" class="w-full min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
+                    <option value="all">{{ __('messages.all_trackers') }}</option>
+                    @foreach($this->trackerHosts as $trackerHost)
+                        <option value="{{ $trackerHost }}">{{ $trackerHost }}</option>
+                    @endforeach
+                </select>
+
                 <div class="flex items-center gap-2 w-full">
                     <select wire:model.live="sortBy" class="flex-1 min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer">
                         <option value="name">{{ __('messages.name') }}</option>
@@ -287,6 +345,13 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                     <option value="paused">{{ __('messages.paused') }}</option>
                     <option value="seeding">{{ __('messages.seeding') }}</option>
                     <option value="completed">{{ __('messages.completed') }}</option>
+                </select>
+
+                <select wire:model.live="filterTracker" class="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-core-primary outline-none transition cursor-pointer max-w-[240px] truncate">
+                    <option value="all">{{ __('messages.all_trackers') }}</option>
+                    @foreach($this->trackerHosts as $trackerHost)
+                        <option value="{{ $trackerHost }}">{{ $trackerHost }}</option>
+                    @endforeach
                 </select>
 
                 <button wire:click="refreshTorrents" class="cursor-pointer p-2.5 bg-core-primary text-white rounded-xl hover:bg-core-primary/90 transition shadow-lg shadow-core-primary/20">
@@ -375,7 +440,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                                     <span class="px-2 py-0.5 text-[9px] font-black rounded-lg uppercase tracking-widest border
                                         {{ str_contains($torrent['state'], 'download') ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' : 
                                            (str_contains($torrent['state'], 'pause') || str_contains($torrent['state'], 'stop') ? 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800/40 dark:text-zinc-400 dark:border-zinc-700' : 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800') }}">
-                                        {{ str_replace('_', ' ', $torrent['state']) }}
+                                        {{ $this->displayTorrentState($torrent['state'] ?? '') }}
                                     </span>
                                 </td>
                             @endif
@@ -393,8 +458,10 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                                 </td>
                             @endif
                             @if($columns['ratio'])
-                                <td class="px-6 py-4 text-xs font-bold text-zinc-500 text-center">
-                                    {{ round($torrent['ratio'] ?? 0, 2) }}
+                                @php $ratio = (float) ($torrent['ratio'] ?? 0); @endphp
+                                <td class="px-6 py-4 text-xs font-bold text-center {{ $ratio < 1.0 ? 'text-red-500 dark:text-red-400' : '' }}"
+                                    style="{{ $this->ratioColorStyle($ratio) }}">
+                                    {{ round($ratio, 2) }}
                                 </td>
                             @endif
                             @if($columns['tracker'])
@@ -439,7 +506,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
         </div>
 
         <div class="hidden md:block mt-6">
-            <flux:pagination :paginator="$this->filteredTorrents" />
+            <flux:pagination :paginator="$this->filteredTorrents" class="[&>nav]:text-sm [&_button]:text-sm [&_button]:min-h-10 [&_button]:min-w-10 [&_a]:text-sm [&_a]:min-h-10 [&_a]:min-w-10" />
         </div>
 
         <!-- Mobile View: Cards -->
@@ -461,7 +528,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                             <span class="px-2 py-0.5 text-[9px] font-black rounded-lg uppercase tracking-widest border
                                 {{ str_contains($torrent['state'], 'download') ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' : 
                                    (str_contains($torrent['state'], 'pause') || str_contains($torrent['state'], 'stop') ? 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800/40 dark:text-zinc-400 dark:border-zinc-700' : 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800') }}">
-                                {{ str_replace('_', ' ', $torrent['state']) }}
+                                {{ $this->displayTorrentState($torrent['state'] ?? '') }}
                             </span>
                         </div>
                     </div>
@@ -500,7 +567,9 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                     <!-- Actions -->
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-1">
-                            <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter mr-2">{{ __('messages.ratio') }}: {{ round($torrent['ratio'] ?? 0, 2) }}</span>
+                            @php $mobileRatio = (float) ($torrent['ratio'] ?? 0); @endphp
+                            <span class="text-[10px] font-bold uppercase tracking-tighter mr-2 {{ $mobileRatio < 1.0 ? 'text-red-500 dark:text-red-400' : '' }}"
+                                  style="{{ $this->ratioColorStyle($mobileRatio) }}">{{ __('messages.ratio') }}: {{ round($mobileRatio, 2) }}</span>
                         </div>
                         <div class="flex items-center gap-2">
                              @if(str_contains($torrent['state'], 'pause') || str_contains($torrent['state'], 'stop'))
@@ -531,7 +600,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
         </div>
 
         <div class="md:hidden mt-6">
-            <flux:pagination :paginator="$this->filteredTorrents" />
+            <flux:pagination :paginator="$this->filteredTorrents" class="[&>nav]:text-sm [&_button]:text-sm [&_button]:min-h-10 [&_button]:min-w-10 [&_a]:text-sm [&_a]:min-h-10 [&_a]:min-w-10" />
         </div>
     @endif
 

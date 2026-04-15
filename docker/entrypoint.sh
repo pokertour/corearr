@@ -6,6 +6,11 @@ chown -R www-data:www-data /var/www/html/storage /var/www/html/database
 chmod -R 775 /var/www/html/storage /var/www/html/database
 chmod -R 775 /var/www/html/bootstrap/cache 2>/dev/null || true
 
+# Force APP_VERSION from image build metadata (avoids stale runtime env override)
+if [ -f /etc/corearr_version ]; then
+    export APP_VERSION="$(tr -d '\r\n' < /etc/corearr_version)"
+fi
+
 # Création de la DB si absente
 DB_PATH="/var/www/html/database/database.sqlite"
 
