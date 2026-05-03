@@ -167,6 +167,39 @@ class MediaStackService
     }
 
     /**
+     * Global transfer speeds only (lighter than {@see getQbitData}).
+     *
+     * @return array<string, mixed>
+     */
+    public function getQbitTransferInfo(): array
+    {
+        $settings = ServiceSetting::query()
+            ->where('service_name', 'qbittorrent')
+            ->where('is_active', true)
+            ->first();
+
+        if (! $settings || ! $settings->base_url) {
+            return [];
+        }
+
+        $url = rtrim($settings->base_url, '/');
+
+        $response = Http::asForm()->post($url.'/api/v2/auth/login', [
+            'username' => $settings->username,
+            'password' => $settings->password,
+        ]);
+
+        if (! $response->successful()) {
+            return [];
+        }
+
+        $cookie = $response->header('Set-Cookie');
+        $transfer = Http::withHeaders(['Cookie' => $cookie])->get($url.'/api/v2/transfer/info');
+
+        return $transfer->successful() ? ($transfer->json() ?? []) : [];
+    }
+
+    /**
      * Get Calendar data from Sonarr/Radarr
      */
     public function getCalendarEntries(): array
@@ -494,6 +527,62 @@ class MediaStackService
     public function getQualityProfiles(string $service): array
     {
         return $this->request($service, 'GET', 'qualityprofile');
+    }
+
+    /**
+     * Library-wide file stats for dashboard charts (Radarr + Sonarr), cached briefly.
+     *
+     * @return array{configured: bool, total_files: int, codec: array<string, int>, quality_rows: array<int, array{label: string, count: int}>}
+     */
+    public function getLibraryFileAnalytics(): array
+    {
+        return Cache::remember(
+            'corearr:library_file_analytics:v1',
+            now()->addMinutes(5),
+            fn () => $this->buildLibraryFileAnalytics()
+        );
+    }
+
+    /**
+     * All disk volumes reported by Radarr/Sonarr (cached a few minutes).
+     *
+     * @return array{radarr: array<int, array{path: string, label: string, total: int, free: int, used: int, used_percent: float}>, sonarr: array<int, array{path: string, label: string, total: int, free: int, used: int, used_percent: float}>}
+     */
+    public function getArrDiskspacePanels(): array
+    {
+        return Cache::remember(
+            'corearr:arr_diskspace_panels:v1',
+            now()->addMinutes(3),
+            fn () => $this->buildArrDiskspacePanels()
+        );
+    }
+
+    /**
+     * Queue activity with warning counts + sample rows for the dashboard (short cache).
+     *
+     * @return array{radarr: array<string, mixed>, sonarr: array<string, mixed>}
+     */
+    public function getArrQueueOverview(): array
+    {
+        return Cache::remember(
+            'corearr:arr_queue_overview:v1',
+            now()->addSeconds(55),
+            fn () => $this->buildArrQueueOverview()
+        );
+    }
+
+    /**
+     * Monitored vs unmonitored library items (movies / series lists).
+     *
+     * @return array{radarr: array<string, int|bool>, sonarr: array<string, int|bool>}
+     */
+    public function getArrMonitoredSummary(): array
+    {
+        return Cache::remember(
+            'corearr:arr_monitored_summary:v1',
+            now()->addMinutes(5),
+            fn () => $this->buildArrMonitoredSummary()
+        );
     }
 
     /**
@@ -837,5 +926,419 @@ class MediaStackService
         }
 
         return $id;
+    }
+
+    /**
+     * @return array{configured: bool, total_files: int, codec: array<string, int>, quality_rows: array<int, array{label: string, count: int}>}
+     */
+    private function buildLibraryFileAnalytics(): array
+    {
+        $configured = $this->isArrServiceConfigured('radarr') || $this->isArrServiceConfigured('sonarr');
+
+        $files = array_merge($this->listRadarrMovieFiles(), $this->listSonarrEpisodeFiles());
+
+        $codec = [
+            'h264' => 0,
+            'hevc' => 0,
+            'other' => 0,
+            'unknown' => 0,
+        ];
+        $qualityCounts = [];
+
+        foreach ($files as $file) {
+            if (! is_array($file)) {
+                continue;
+            }
+            $bucket = $this->categorizeVideoCodecForLibrary($file['mediaInfo']['videoCodec'] ?? null);
+            $codec[$bucket]++;
+
+            $label = (string) ($file['quality']['quality']['name'] ?? '');
+            if ($label === '') {
+                $label = __('messages.dashboard_lib_quality_unknown');
+            }
+            $qualityCounts[$label] = ($qualityCounts[$label] ?? 0) + 1;
+        }
+
+        return [
+            'configured' => $configured,
+            'total_files' => count($files),
+            'codec' => $codec,
+            'quality_rows' => $this->rollupQualityRows($qualityCounts),
+        ];
+    }
+
+    private function isArrServiceConfigured(string $service): bool
+    {
+        return ServiceSetting::query()
+            ->where('service_name', $service)
+            ->where('is_active', true)
+            ->whereNotNull('base_url')
+            ->exists();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function listRadarrMovieFiles(): array
+    {
+        if (! $this->isArrServiceConfigured('radarr')) {
+            return [];
+        }
+
+        $raw = $this->request('radarr', 'GET', 'movieFile');
+        $normalized = $this->normalizeEndpointListPayload($raw);
+
+        if ($normalized !== []) {
+            return $normalized;
+        }
+
+        $fromMovies = [];
+        $movies = $this->request('radarr', 'GET', 'movie');
+        foreach ($this->normalizeEndpointListPayload($movies) as $movie) {
+            if (! empty($movie['movieFile']) && is_array($movie['movieFile'])) {
+                $fromMovies[] = $movie['movieFile'];
+            }
+        }
+
+        return $fromMovies;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function listSonarrEpisodeFiles(): array
+    {
+        if (! $this->isArrServiceConfigured('sonarr')) {
+            return [];
+        }
+
+        $raw = $this->request('sonarr', 'GET', 'episodeFile');
+
+        return $this->normalizeEndpointListPayload($raw);
+    }
+
+    /**
+     * @param  array<mixed>|mixed  $raw
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeEndpointListPayload(mixed $raw): array
+    {
+        if (! is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        if (isset($raw['id']) && isset($raw['quality'])) {
+            return [$raw];
+        }
+
+        $out = [];
+
+        foreach ($raw as $row) {
+            if (is_array($row)) {
+                $out[] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Group codecs for high-level dashboards (main buckets: AVC/x264 vs HEVC/x265).
+     *
+     * @phpstan-return 'h264'|'hevc'|'other'|'unknown'
+     */
+    private function categorizeVideoCodecForLibrary(?string $codec): string
+    {
+        $original = strtolower(trim((string) $codec));
+        $compact = preg_replace('/[^a-z0-9]/', '', $original) ?? '';
+
+        if ($compact === '' || str_contains($original, 'unknown')) {
+            return 'unknown';
+        }
+
+        if (str_contains($compact, 'x265') || str_contains($compact, 'h265') || str_contains($compact, 'hevc')) {
+            return 'hevc';
+        }
+
+        if (str_contains($compact, 'x264') || str_contains($compact, 'h264') || str_contains($compact, 'avc')) {
+            return 'h264';
+        }
+
+        if (str_contains($compact, 'mpeg4') || str_contains($compact, 'divx') || str_contains($compact, 'xvid')) {
+            return 'h264';
+        }
+
+        if (str_contains($compact, 'av01') || str_contains($compact, 'av1')) {
+            return 'other';
+        }
+
+        return 'other';
+    }
+
+    /**
+     * @param  array<string, int>  $qualityCounts
+     * @return array<int, array{label: string, count: int}>
+     */
+    private function rollupQualityRows(array $qualityCounts): array
+    {
+        if ($qualityCounts === []) {
+            return [];
+        }
+
+        arsort($qualityCounts, SORT_NUMERIC);
+
+        $top = 12;
+        $rows = [];
+        $i = 0;
+        $other = 0;
+
+        foreach ($qualityCounts as $label => $count) {
+            if ($i < $top) {
+                $rows[] = ['label' => $label, 'count' => $count];
+                $i++;
+            } else {
+                $other += $count;
+            }
+        }
+
+        if ($other > 0) {
+            $rows[] = ['label' => __('messages.dashboard_lib_quality_other'), 'count' => $other];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array{radarr: array<int, array{path: string, label: string, total: int, free: int, used: int, used_percent: float}>, sonarr: array<int, array{path: string, label: string, total: int, free: int, used: int, used_percent: float}>}
+     */
+    private function buildArrDiskspacePanels(): array
+    {
+        $panels = ['radarr' => [], 'sonarr' => []];
+
+        foreach (['radarr', 'sonarr'] as $svc) {
+            if (! $this->isArrServiceConfigured($svc)) {
+                continue;
+            }
+
+            $raw = $this->request($svc, 'GET', 'diskspace');
+            if (! is_array($raw) || $raw === []) {
+                continue;
+            }
+
+            $rows = array_is_list($raw) ? $raw : [$raw];
+
+            foreach ($rows as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $total = (int) ($row['totalSpace'] ?? 0);
+                if ($total <= 0) {
+                    continue;
+                }
+                $free = max(0, (int) ($row['freeSpace'] ?? 0));
+                $used = max(0, $total - $free);
+
+                $path = (string) ($row['path'] ?? '');
+                $panels[$svc][] = [
+                    'path' => $path,
+                    'label' => (string) ($row['label'] ?? '') ?: $path,
+                    'total' => $total,
+                    'free' => $free,
+                    'used' => $used,
+                    'used_percent' => round(($used / $total) * 100, 1),
+                ];
+            }
+        }
+
+        return $panels;
+    }
+
+    /**
+     * @return array{radarr: array<string, mixed>, sonarr: array<string, mixed>}
+     */
+    private function buildArrQueueOverview(): array
+    {
+        return [
+            'radarr' => $this->buildServiceQueueSummary('radarr'),
+            'sonarr' => $this->buildServiceQueueSummary('sonarr'),
+        ];
+    }
+
+    /**
+     * @return array{configured: bool, total: int, warnings: int, items: array<int, array{title: string, warning: bool, subtitle: string}>}
+     */
+    private function buildServiceQueueSummary(string $service): array
+    {
+        if (! $this->isArrServiceConfigured($service)) {
+            return ['configured' => false, 'total' => 0, 'warnings' => 0, 'items' => []];
+        }
+
+        $payload = $this->request($service, 'GET', 'queue?pageSize=100');
+
+        /** @var list<array<string, mixed>> $records */
+        $records = $payload['records'] ?? [];
+        if ($records === [] && is_array($payload) && isset($payload[0]) && ! isset($payload['totalRecords'])) {
+            $records = array_values(array_filter($payload, 'is_array'));
+        }
+
+        if (! is_array($records)) {
+            return ['configured' => true, 'total' => 0, 'warnings' => 0, 'items' => []];
+        }
+
+        $total = (int) ($payload['totalRecords'] ?? count($records));
+
+        $warnings = 0;
+        $items = [];
+
+        foreach ($records as $record) {
+            if (! is_array($record)) {
+                continue;
+            }
+            if ($this->queueRecordHasWarning($record)) {
+                $warnings++;
+            }
+            if (count($items) >= 8) {
+                continue;
+            }
+            $parsed = $this->parseQueueRecordForDashboard($record, $service);
+
+            $items[] = [
+                'title' => $parsed['title'],
+                'subtitle' => $parsed['subtitle'],
+                'warning' => $this->queueRecordHasWarning($record),
+            ];
+        }
+
+        return [
+            'configured' => true,
+            'total' => $total,
+            'warnings' => $warnings,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     */
+    private function queueRecordHasWarning(array $record): bool
+    {
+        $err = trim((string) ($record['errorMessage'] ?? ''));
+
+        if ($err !== '') {
+            return true;
+        }
+
+        $status = strtolower((string) ($record['status'] ?? ''));
+
+        if (str_contains($status, 'fail') || str_contains($status, 'error')) {
+            return true;
+        }
+
+        $state = strtolower((string) ($record['trackedDownloadState'] ?? ''));
+
+        return str_contains($state, 'fail')
+            || str_contains($state, 'warning');
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     * @return array{title: string, subtitle: string}
+     */
+    private function parseQueueRecordForDashboard(array $record, string $service): array
+    {
+        if ($service === 'radarr') {
+            $movie = $record['movie'] ?? [];
+
+            return [
+                'title' => (string) (is_array($movie) ? ($movie['title'] ?? '') : '') ?: (string) ($record['title'] ?? __('messages.dashboard_arr_queue_unknown_title')),
+                'subtitle' => (string) ($record['status'] ?? ''),
+            ];
+        }
+
+        $series = is_array($record['series'] ?? null) ? $record['series'] : [];
+        $episode = is_array($record['episode'] ?? null) ? $record['episode'] : [];
+        $sTitle = (string) ($series['title'] ?? '');
+        $season = $episode['seasonNumber'] ?? null;
+        $epNum = $episode['episodeNumber'] ?? null;
+        $epTitle = (string) ($episode['title'] ?? '');
+
+        $num = '';
+
+        if ($season !== null && $epNum !== null) {
+            $num = 'S'.(int) $season.'E'.(int) $epNum;
+        }
+
+        return [
+            'title' => $sTitle ?: (string) ($record['title'] ?? __('messages.dashboard_arr_queue_unknown_title')),
+            'subtitle' => trim($num.($epTitle !== '' ? ' · '.$epTitle : '')),
+        ];
+    }
+
+    /**
+     * @return array{radarr: array<string, int|bool>, sonarr: array<string, int|bool>}
+     */
+    private function buildArrMonitoredSummary(): array
+    {
+        $out = [
+            'radarr' => ['configured' => false, 'monitored' => 0, 'unmonitored' => 0],
+            'sonarr' => ['configured' => false, 'monitored' => 0, 'unmonitored' => 0],
+        ];
+
+        if ($this->isArrServiceConfigured('radarr')) {
+            $movies = $this->request('radarr', 'GET', 'movie');
+            foreach ($this->flattenMediaListPayload($movies) as $movie) {
+                if (($movie['monitored'] ?? false) === true) {
+                    $out['radarr']['monitored']++;
+                } else {
+                    $out['radarr']['unmonitored']++;
+                }
+            }
+            $out['radarr']['configured'] = true;
+        }
+
+        if ($this->isArrServiceConfigured('sonarr')) {
+            $series = $this->request('sonarr', 'GET', 'series');
+
+            foreach ($this->flattenMediaListPayload($series) as $row) {
+                if (($row['monitored'] ?? false) === true) {
+                    $out['sonarr']['monitored']++;
+                } else {
+                    $out['sonarr']['unmonitored']++;
+                }
+            }
+            $out['sonarr']['configured'] = true;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Normalize /movie or /series API payloads into a numeric list.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function flattenMediaListPayload(mixed $payload): array
+    {
+        if (! is_array($payload) || $payload === []) {
+            return [];
+        }
+
+        if (isset($payload['id']) && (isset($payload['title']) || isset($payload['cleanTitle']) || isset($payload['sortTitle']))) {
+            return [$payload];
+        }
+
+        if (! array_is_list($payload)) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach ($payload as $row) {
+            if (is_array($row)) {
+                $out[] = $row;
+            }
+        }
+
+        return $out;
     }
 }

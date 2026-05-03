@@ -6,7 +6,7 @@ use Livewire\Attributes\Title;
 use App\Services\MediaStack\MediaStackService;
 use App\Services\MediaStack\JellyseerrService;
 use App\Models\ServiceSetting;
-use Illuminate\Support\Facades\Cache;
+use App\Models\QbittorrentSpeedSample;
 
 new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class extends Component {
     public array $stats = [
@@ -53,6 +53,11 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
         'ops_torrent_states' => 'messages.dashboard_widget_ops_torrent_states',
         'ops_request_pipeline' => 'messages.dashboard_widget_ops_request_pipeline',
         'ops_indexer_health' => 'messages.dashboard_widget_ops_indexer_health',
+        'lib_codec_chart' => 'messages.dashboard_widget_lib_codec_chart',
+        'lib_quality_chart' => 'messages.dashboard_widget_lib_quality_chart',
+        'arr_diskspace' => 'messages.dashboard_widget_arr_diskspace',
+        'arr_queue' => 'messages.dashboard_widget_arr_queue',
+        'arr_monitored' => 'messages.dashboard_widget_arr_monitored',
     ];
 
     public function mount(MediaStackService $service, JellyseerrService $jellyseerr)
@@ -82,8 +87,9 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
             $this->stats['up_speed'] = $qbit['server_state']['up_info_speed'] ?? 0;
             $this->stats['count'] = count($qbit['torrents'] ?? []);
             $this->stats['total_size'] = collect($qbit['torrents'] ?? [])->sum('size');
-            $this->recordSpeedSample($this->stats['dl_speed'], $this->stats['up_speed']);
-            $this->speedHistory = $this->buildSpeedHistory();
+            $this->speedHistory = QbittorrentSpeedSample::chartSamplesWithinHours(
+                max(1, min(168, (int) config('corearr.qbittorrent_speed_sample_retention_hours', 24)))
+            );
             $this->torrentStateStats = $this->buildTorrentStateStats($qbit['torrents'] ?? []);
 
             if (empty($qbit)) {
@@ -252,6 +258,7 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
             'ops_speed_24h', 'ops_torrent_states' => $this->qbitConfigured,
             'ops_request_pipeline' => $this->jellyseerrConfigured,
             'ops_indexer_health' => $this->isServiceConfigured('prowlarr'),
+            'lib_codec_chart', 'lib_quality_chart', 'arr_diskspace', 'arr_queue', 'arr_monitored' => $this->arrConfigured,
             default => false,
         };
     }
@@ -259,36 +266,6 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
     protected function isServiceConfigured(string $service): bool
     {
         return (bool) ($this->configuredServices[$service] ?? false);
-    }
-
-    protected function recordSpeedSample(int $downloadSpeed, int $uploadSpeed): void
-    {
-        $key = 'dashboard:qbit_speed_samples';
-        $samples = Cache::get($key, []);
-        $cutoff = now()->subDay()->timestamp;
-
-        $samples = array_values(array_filter($samples, fn ($sample) => ($sample['ts'] ?? 0) >= $cutoff));
-        $samples[] = [
-            'ts' => now()->timestamp,
-            'dl' => max(0, $downloadSpeed),
-            'ul' => max(0, $uploadSpeed),
-        ];
-
-        if (count($samples) > 288) {
-            $samples = array_slice($samples, -288);
-        }
-
-        Cache::put($key, $samples, now()->addHours(30));
-    }
-
-    protected function buildSpeedHistory(): array
-    {
-        $samples = Cache::get('dashboard:qbit_speed_samples', []);
-        if (empty($samples)) {
-            return [];
-        }
-
-        return array_slice($samples, -24);
     }
 
     protected function buildTorrentStateStats(array $torrents): array
@@ -370,6 +347,126 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
         $user->dashboard_preferences = $this->dashboardPreferences;
         $user->save();
     }
+
+    /**
+     * @return array{source: string, label: string, value: string|int|float, icon: string, color: string}|null
+     */
+    public function statCardPayload(string $widgetKey): ?array
+    {
+        return match ($widgetKey) {
+            'qbit_downloads_count' => [
+                'source' => 'qbittorrent',
+                'label' => __('messages.downloads'),
+                'value' => $this->stats['count'],
+                'icon' => 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+                'color' => 'blue',
+            ],
+            'qbit_download_speed' => [
+                'source' => 'qbittorrent',
+                'label' => __('messages.download_speed'),
+                'value' => $this->formatSize($this->stats['dl_speed']) . '/s',
+                'icon' => 'M13 10V3L4 14h7v7l9-11h-7z',
+                'color' => 'yellow',
+            ],
+            'qbit_upload_speed' => [
+                'source' => 'qbittorrent',
+                'label' => __('messages.upload_speed'),
+                'value' => $this->formatSize($this->stats['up_speed']) . '/s',
+                'icon' => 'M8 7l4-4m0 0l4 4m-4-4v18',
+                'color' => 'teal',
+            ],
+            'qbit_total_volume' => [
+                'source' => 'qbittorrent',
+                'label' => __('messages.total_volume'),
+                'value' => $this->formatSize($this->stats['total_size']),
+                'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+                'color' => 'purple',
+            ],
+            'jellyseerr_total' => [
+                'source' => __('messages.jellyseerr'),
+                'label' => __('messages.total_requests'),
+                'value' => $this->jellyStats['total'] ?? 0,
+                'icon' => 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2',
+                'color' => 'core-primary',
+            ],
+            'jellyseerr_movies' => [
+                'source' => __('messages.jellyseerr'),
+                'label' => __('messages.movies'),
+                'value' => $this->jellyStats['movie'] ?? 0,
+                'icon' => 'M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z',
+                'color' => 'blue',
+            ],
+            'jellyseerr_series' => [
+                'source' => __('messages.jellyseerr'),
+                'label' => __('messages.series'),
+                'value' => $this->jellyStats['tv'] ?? 0,
+                'icon' => 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+                'color' => 'purple',
+            ],
+            'jellyseerr_processing' => [
+                'source' => __('messages.jellyseerr'),
+                'label' => __('messages.pending'),
+                'value' => $this->jellyStats['processing'] ?? 0,
+                'icon' => 'M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+                'color' => 'orange',
+            ],
+            'jellyseerr_completed' => [
+                'source' => __('messages.jellyseerr'),
+                'label' => __('messages.completed'),
+                'value' => $this->jellyStats['completed'] ?? 0,
+                'icon' => 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+                'color' => 'green',
+            ],
+            default => null,
+        };
+    }
+
+    /**
+     * @return array{service: string, label: string, iconBgClass: string, iconTextClass: string, hoverBorderClass: string, icon: string, count: int|string, health: string}|null
+     */
+    public function arrCardPayload(string $widgetKey): ?array
+    {
+        $configs = [
+            'arr_radarr' => [
+                'service' => 'radarr',
+                'label' => __('messages.movies'),
+                'iconBgClass' => 'bg-indigo-500/10',
+                'iconTextClass' => 'text-indigo-500',
+                'hoverBorderClass' => 'hover:border-indigo-500/50',
+                'icon' => 'M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z',
+            ],
+            'arr_sonarr' => [
+                'service' => 'sonarr',
+                'label' => __('messages.series'),
+                'iconBgClass' => 'bg-yellow-500/10',
+                'iconTextClass' => 'text-yellow-500',
+                'hoverBorderClass' => 'hover:border-yellow-500/50',
+                'icon' => 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+            ],
+            'arr_prowlarr' => [
+                'service' => 'prowlarr',
+                'label' => __('messages.indexers'),
+                'iconBgClass' => 'bg-pink-500/10',
+                'iconTextClass' => 'text-pink-500',
+                'hoverBorderClass' => 'hover:border-pink-500/50',
+                'icon' => 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
+            ],
+        ];
+
+        if (! isset($configs[$widgetKey])) {
+            return null;
+        }
+
+        $cfg = $configs[$widgetKey];
+        $serviceId = $cfg['service'];
+        $arr = $this->arrStats[$serviceId] ?? [];
+
+        return [
+            ...$cfg,
+            'count' => $arr['count'] ?? 0,
+            'health' => (string) ($arr['health'] ?? 'OK'),
+        ];
+    }
 };
 
 ?>
@@ -446,304 +543,77 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         @foreach ($this->getOrderedWidgets() as $widgetKey)
             @if ($this->isWidgetVisible($widgetKey) && $this->isWidgetAvailable($widgetKey))
-                @php
-                    $statCards = [
-                        'qbit_downloads_count' => ['source' => 'qbittorrent', 'label' => __('messages.downloads'), 'value' => $stats['count'], 'icon' => 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4', 'color' => 'blue'],
-                        'qbit_download_speed' => ['source' => 'qbittorrent', 'label' => __('messages.download_speed'), 'value' => $this->formatSize($stats['dl_speed']) . '/s', 'icon' => 'M13 10V3L4 14h7v7l9-11h-7z', 'color' => 'yellow'],
-                        'qbit_upload_speed' => ['source' => 'qbittorrent', 'label' => __('messages.upload_speed'), 'value' => $this->formatSize($stats['up_speed']) . '/s', 'icon' => 'M8 7l4-4m0 0l4 4m-4-4v18', 'color' => 'teal'],
-                        'qbit_total_volume' => ['source' => 'qbittorrent', 'label' => __('messages.total_volume'), 'value' => $this->formatSize($stats['total_size']), 'icon' => 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', 'color' => 'purple'],
-                        'jellyseerr_total' => ['source' => __('messages.jellyseerr'), 'label' => __('messages.total_requests'), 'value' => $jellyStats['total'] ?? 0, 'icon' => 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2', 'color' => 'core-primary'],
-                        'jellyseerr_movies' => ['source' => __('messages.jellyseerr'), 'label' => __('messages.movies'), 'value' => $jellyStats['movie'] ?? 0, 'icon' => 'M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z', 'color' => 'blue'],
-                        'jellyseerr_series' => ['source' => __('messages.jellyseerr'), 'label' => __('messages.series'), 'value' => $jellyStats['tv'] ?? 0, 'icon' => 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z', 'color' => 'purple'],
-                        'jellyseerr_processing' => ['source' => __('messages.jellyseerr'), 'label' => __('messages.pending'), 'value' => $jellyStats['processing'] ?? 0, 'icon' => 'M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z', 'color' => 'orange'],
-                        'jellyseerr_completed' => ['source' => __('messages.jellyseerr'), 'label' => __('messages.completed'), 'value' => $jellyStats['completed'] ?? 0, 'icon' => 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 'color' => 'green'],
-                    ];
-                    $arrCards = [
-                        'arr_radarr' => ['service' => 'radarr', 'label' => __('messages.movies'), 'iconBgClass' => 'bg-indigo-500/10', 'iconTextClass' => 'text-indigo-500', 'hoverBorderClass' => 'hover:border-indigo-500/50', 'icon' => 'M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z'],
-                        'arr_sonarr' => ['service' => 'sonarr', 'label' => __('messages.series'), 'iconBgClass' => 'bg-yellow-500/10', 'iconTextClass' => 'text-yellow-500', 'hoverBorderClass' => 'hover:border-yellow-500/50', 'icon' => 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z'],
-                        'arr_prowlarr' => ['service' => 'prowlarr', 'label' => __('messages.indexers'), 'iconBgClass' => 'bg-pink-500/10', 'iconTextClass' => 'text-pink-500', 'hoverBorderClass' => 'hover:border-pink-500/50', 'icon' => 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'],
-                    ];
-                @endphp
-
-                @if (isset($statCards[$widgetKey]))
-                    @php
-                        $card = $statCards[$widgetKey];
-                        $isCorePrimary = $card['color'] === 'core-primary';
-                        $iconBgClass = $isCorePrimary ? 'bg-core-primary/10' : 'bg-' . $card['color'] . '-500/10';
-                        $iconTextClass = $isCorePrimary ? 'text-core-primary' : 'text-' . $card['color'] . '-500';
-                        $hoverBorderClass = $isCorePrimary ? 'hover:border-core-primary/50' : 'hover:border-' . $card['color'] . '-500/50';
-                    @endphp
-                    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm {{ $hoverBorderClass }} transition duration-300 relative group">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-xl {{ $iconBgClass }} flex items-center justify-center {{ $iconTextClass }} group-hover:scale-110 transition-transform">
-                                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $card['icon'] }}" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <span class="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{{ $card['source'] }}</span>
-                                    <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ $card['label'] }}</h4>
-                                </div>
-                            </div>
-                            <div class="flex flex-col items-end">
-                                <span class="text-2xl font-black text-zinc-900 dark:text-white">{{ $card['value'] }}</span>
-                            </div>
-                        </div>
-                    </div>
-                @elseif (isset($arrCards[$widgetKey]))
-                    @php $cfg = $arrCards[$widgetKey]; $serviceId = $cfg['service']; @endphp
-                    <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm {{ $cfg['hoverBorderClass'] }} transition duration-300 relative group">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-xl {{ $cfg['iconBgClass'] }} flex items-center justify-center {{ $cfg['iconTextClass'] }} group-hover:scale-110 transition-transform">
-                                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ $cfg['icon'] }}" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <span class="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{{ $serviceId }}</span>
-                                    <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ $cfg['label'] }}</h4>
-                                </div>
-                            </div>
-                            <div class="flex flex-col items-end">
-                                <span class="text-2xl font-black text-zinc-900 dark:text-white">{{ $arrStats[$serviceId]['count'] }}</span>
-                                <span class="text-[9px] font-bold {{ ($arrStats[$serviceId]['health'] ?? 'OK') === 'OK' ? 'text-green-500' : 'text-yellow-500' }} uppercase tracking-tighter">{{ $arrStats[$serviceId]['health'] ?? 'OK' }}</span>
-                            </div>
-                        </div>
-                    </div>
+                @if (($statCard = $this->statCardPayload($widgetKey)))
+                    <livewire:widgets.dashboard-stat-card
+                        wire:key="dashboard-stat-{{ $widgetKey }}"
+                        :source="$statCard['source']"
+                        :label="$statCard['label']"
+                        :value-display="$statCard['value']"
+                        :icon-path="$statCard['icon']"
+                        :color="$statCard['color']"
+                    />
+                @elseif (($arrCard = $this->arrCardPayload($widgetKey)))
+                    <livewire:widgets.arr-stat-card
+                        wire:key="dashboard-arr-{{ $widgetKey }}"
+                        :service-id="$arrCard['service']"
+                        :label="$arrCard['label']"
+                        :icon-path="$arrCard['icon']"
+                        :icon-bg-class="$arrCard['iconBgClass']"
+                        :icon-text-class="$arrCard['iconTextClass']"
+                        :hover-border-class="$arrCard['hoverBorderClass']"
+                        :count="$arrCard['count']"
+                        :health="$arrCard['health']"
+                    />
                 @elseif ($widgetKey === 'qbit_downloads')
                     <div class="xl:col-span-3">
-                        <livewire:widgets.qbit-downloads />
+                        <livewire:widgets.qbit-downloads wire:key="widgets-qbit-downloads" />
                     </div>
                 @elseif ($widgetKey === 'arr_calendar')
                     <div class="xl:col-span-1">
-                        <livewire:widgets.arr-calendar />
+                        <livewire:widgets.arr-calendar wire:key="widgets-arr-calendar" />
                     </div>
                 @elseif ($widgetKey === 'media_users')
                     <div class="xl:col-span-2">
-                        <livewire:widgets.media-users />
+                        <livewire:widgets.media-users wire:key="widgets-media-users" />
                     </div>
                 @elseif ($widgetKey === 'media_top_users')
                     <div class="xl:col-span-2">
-                        <livewire:widgets.media-top-users />
+                        <livewire:widgets.media-top-users wire:key="widgets-media-top-users" />
                     </div>
                 @elseif ($widgetKey === 'ops_speed_24h')
-                    <div class="xl:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                        <div class="flex items-center justify-between mb-4">
-                            <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ __('messages.ops_speed_24h_title') }}</h4>
-                            <span class="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{{ __('messages.ops_period_24h') }}</span>
-                        </div>
-                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_qbit_cache') }}</p>
-                        @if ($qbitConfigured && !empty($speedHistory))
-                            @php
-                                $graphWidth = 340;
-                                $graphHeight = 90;
-                                $dlValues = array_map(fn ($sample) => (int) ($sample['dl'] ?? 0), $speedHistory);
-                                $ulValues = array_map(fn ($sample) => (int) ($sample['ul'] ?? 0), $speedHistory);
-                                $maxValue = max(max($dlValues), max($ulValues), 1);
-                                $buildPolyline = function (array $values, int $height = 90, int $width = 340) use ($maxValue) {
-                                    $count = max(count($values) - 1, 1);
-                                    $points = [];
-                                    foreach ($values as $index => $value) {
-                                        $x = round(($index / $count) * $width, 2);
-                                        $y = round($height - (($value / $maxValue) * $height), 2);
-                                        $points[] = "{$x},{$y}";
-                                    }
-                                    return implode(' ', $points);
-                                };
-                                $buildPoints = function (array $values, int $height = 90, int $width = 340) use ($maxValue) {
-                                    $count = max(count($values) - 1, 1);
-                                    $points = [];
-                                    foreach ($values as $index => $value) {
-                                        $x = round(($index / $count) * $width, 2);
-                                        $y = round($height - (($value / $maxValue) * $height), 2);
-                                        $points[] = ['x' => $x, 'y' => $y];
-                                    }
-                                    return $points;
-                                };
-                                $dlPoints = $buildPoints($dlValues, $graphHeight, $graphWidth);
-                                $ulPoints = $buildPoints($ulValues, $graphHeight, $graphWidth);
-                                $hoverSamples = array_map(function ($sample) {
-                                    $timestamp = (int) ($sample['ts'] ?? now()->timestamp);
-                                    return [
-                                        'time' => \Carbon\Carbon::createFromTimestamp($timestamp)->format('H:i'),
-                                        'dl' => $this->formatSize((int) ($sample['dl'] ?? 0)) . '/s',
-                                        'ul' => $this->formatSize((int) ($sample['ul'] ?? 0)) . '/s',
-                                    ];
-                                }, $speedHistory);
-                            @endphp
-                            <div
-                                class="relative mb-3"
-                                x-data="{
-                                    width: {{ $graphWidth }},
-                                    dlPoints: @js($dlPoints),
-                                    ulPoints: @js($ulPoints),
-                                    samples: @js($hoverSamples),
-                                    activeIndex: null,
-                                    setActive(event) {
-                                        const rect = event.currentTarget.getBoundingClientRect();
-                                        const x = Math.max(0, Math.min(this.width, ((event.clientX - rect.left) / rect.width) * this.width));
-                                        let nearest = 0;
-                                        let minDistance = Infinity;
-                                        this.dlPoints.forEach((point, index) => {
-                                            const distance = Math.abs(point.x - x);
-                                            if (distance < minDistance) {
-                                                minDistance = distance;
-                                                nearest = index;
-                                            }
-                                        });
-                                        this.activeIndex = nearest;
-                                    }
-                                }"
-                                @mousemove="setActive($event)"
-                                @mouseleave="activeIndex = null"
-                            >
-                                <svg viewBox="0 0 {{ $graphWidth }} {{ $graphHeight }}" preserveAspectRatio="none" class="w-full h-28">
-                                    <polyline fill="none" stroke="rgb(59 130 246)" stroke-width="2.5" points="{{ $buildPolyline($dlValues, $graphHeight, $graphWidth) }}" />
-                                    <polyline fill="none" stroke="rgb(20 184 166)" stroke-width="2.5" points="{{ $buildPolyline($ulValues, $graphHeight, $graphWidth) }}" />
-
-                                    <template x-if="activeIndex !== null">
-                                        <g>
-                                            <line x1="0" y1="0" x2="0" y2="{{ $graphHeight }}" stroke="rgb(148 163 184)" stroke-width="1" stroke-dasharray="3 3"
-                                                  :x1="dlPoints[activeIndex].x" :x2="dlPoints[activeIndex].x"></line>
-                                            <circle r="4" fill="rgb(59 130 246)" stroke="white" stroke-width="1.5"
-                                                    :cx="dlPoints[activeIndex].x" :cy="dlPoints[activeIndex].y"></circle>
-                                            <circle r="4" fill="rgb(20 184 166)" stroke="white" stroke-width="1.5"
-                                                    :cx="ulPoints[activeIndex].x" :cy="ulPoints[activeIndex].y"></circle>
-                                        </g>
-                                    </template>
-                                </svg>
-
-                                <template x-if="activeIndex !== null">
-                                    <div
-                                        class="absolute z-10 -translate-y-full mb-1 px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 shadow text-[10px] font-bold text-zinc-700 dark:text-zinc-200 whitespace-nowrap pointer-events-none"
-                                        :style="`left: calc(${(dlPoints[activeIndex].x / width) * 100}% - 45px); top: 0;`"
-                                    >
-                                        <p class="text-zinc-500" x-text="samples[activeIndex].time"></p>
-                                        <p class="text-blue-600 dark:text-blue-400">DL: <span x-text="samples[activeIndex].dl"></span></p>
-                                        <p class="text-teal-600 dark:text-teal-400">UL: <span x-text="samples[activeIndex].ul"></span></p>
-                                    </div>
-                                </template>
-                            </div>
-                            <div class="grid grid-cols-2 gap-3 text-xs">
-                                <div class="rounded-xl border border-blue-200/60 dark:border-blue-500/20 bg-blue-50/60 dark:bg-blue-500/5 p-3">
-                                    <p class="font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">DL</p>
-                                    <p class="text-zinc-900 dark:text-zinc-100 font-black">{{ $this->formatSize(end($dlValues) ?: 0) }}/s</p>
-                                </div>
-                                <div class="rounded-xl border border-teal-200/60 dark:border-teal-500/20 bg-teal-50/60 dark:bg-teal-500/5 p-3">
-                                    <p class="font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest">UL</p>
-                                    <p class="text-zinc-900 dark:text-zinc-100 font-black">{{ $this->formatSize(end($ulValues) ?: 0) }}/s</p>
-                                </div>
-                            </div>
-                        @else
-                            <p class="text-sm text-zinc-500">{{ __('messages.qbit_not_configured') }}</p>
-                        @endif
-                    </div>
+                    <livewire:widgets.ops-speed-24h
+                        wire:key="widgets-ops-speed-24h"
+                        :qbit-configured="$qbitConfigured"
+                        :speed-history="$speedHistory"
+                    />
                 @elseif ($widgetKey === 'ops_torrent_states')
-                    <div class="xl:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                        <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('messages.ops_torrent_states_title') }}</h4>
-                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_qbit_live') }}</p>
-                        @if ($qbitConfigured && !empty($torrentStateStats))
-                            @php
-                                $totalStates = max(array_sum($torrentStateStats), 1);
-                                $stateRows = [
-                                    ['key' => 'downloading', 'label' => __('messages.ops_downloading'), 'color' => 'bg-blue-500'],
-                                    ['key' => 'seeding', 'label' => __('messages.ops_seeding'), 'color' => 'bg-teal-500'],
-                                    ['key' => 'paused', 'label' => __('messages.ops_paused'), 'color' => 'bg-yellow-500'],
-                                    ['key' => 'stalled', 'label' => __('messages.ops_stalled'), 'color' => 'bg-orange-500'],
-                                    ['key' => 'other', 'label' => __('messages.ops_other'), 'color' => 'bg-zinc-500'],
-                                ];
-                            @endphp
-                            <div class="space-y-3">
-                                @foreach ($stateRows as $row)
-                                    @php
-                                        $value = (int) ($torrentStateStats[$row['key']] ?? 0);
-                                        $percent = round(($value / $totalStates) * 100, 1);
-                                    @endphp
-                                    <div>
-                                        <div class="flex justify-between text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 mb-1">
-                                            <span>{{ $row['label'] }}</span>
-                                            <span>{{ $value }} ({{ $percent }}%)</span>
-                                        </div>
-                                        <div class="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-                                            <div class="h-full {{ $row['color'] }}" style="width: {{ $percent }}%"></div>
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @else
-                            <p class="text-sm text-zinc-500">{{ __('messages.qbit_not_configured') }}</p>
-                        @endif
-                    </div>
+                    <livewire:widgets.ops-torrent-states
+                        wire:key="widgets-ops-torrent-states"
+                        :qbit-configured="$qbitConfigured"
+                        :torrent-state-stats="$torrentStateStats"
+                    />
                 @elseif ($widgetKey === 'ops_request_pipeline')
-                    <div class="xl:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                        <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('messages.ops_request_pipeline_title') }}</h4>
-                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_jellyseerr_live') }}</p>
-                        @if ($jellyseerrConfigured && !empty($requestPipelineStats))
-                            @php
-                                $pipelineTotal = max((int) ($requestPipelineStats['total'] ?? 0), 1);
-                                $pipelineRows = [
-                                    ['key' => 'pending', 'label' => __('messages.pending'), 'color' => 'bg-orange-500'],
-                                    ['key' => 'available', 'label' => __('messages.available'), 'color' => 'bg-blue-500'],
-                                    ['key' => 'completed', 'label' => __('messages.completed'), 'color' => 'bg-green-500'],
-                                ];
-                            @endphp
-                            <div class="space-y-3">
-                                @foreach ($pipelineRows as $row)
-                                    @php
-                                        $value = (int) ($requestPipelineStats[$row['key']] ?? 0);
-                                        $percent = round(($value / $pipelineTotal) * 100, 1);
-                                    @endphp
-                                    <div>
-                                        <div class="flex justify-between text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 mb-1">
-                                            <span>{{ $row['label'] }}</span>
-                                            <span>{{ $value }} ({{ $percent }}%)</span>
-                                        </div>
-                                        <div class="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-                                            <div class="h-full {{ $row['color'] }}" style="width: {{ $percent }}%"></div>
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @else
-                            <p class="text-sm text-zinc-500">{{ __('messages.not_configured_title', ['service' => 'Jellyseerr']) }}</p>
-                        @endif
-                    </div>
+                    <livewire:widgets.ops-request-pipeline
+                        wire:key="widgets-ops-request-pipeline"
+                        :jellyseerr-configured="$jellyseerrConfigured"
+                        :request-pipeline-stats="$requestPipelineStats"
+                    />
                 @elseif ($widgetKey === 'ops_indexer_health')
-                    <div class="xl:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                        <h4 class="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('messages.ops_indexer_health_title') }}</h4>
-                        <p class="text-[11px] text-zinc-500 mb-3">{{ __('messages.ops_source_prowlarr_live') }}</p>
-                        @if ($this->isServiceConfigured('prowlarr') && !empty($indexerHealthStats))
-                            @php
-                                $totalIndexers = max((int) ($indexerHealthStats['total'] ?? 0), 1);
-                                $indexerRows = [
-                                    ['key' => 'enabled', 'label' => __('messages.enabled'), 'color' => 'bg-green-500'],
-                                    ['key' => 'degraded', 'label' => __('messages.ops_degraded'), 'color' => 'bg-yellow-500'],
-                                    ['key' => 'disabled', 'label' => __('messages.disabled'), 'color' => 'bg-zinc-500'],
-                                ];
-                            @endphp
-                            <div class="space-y-3">
-                                @foreach ($indexerRows as $row)
-                                    @php
-                                        $value = (int) ($indexerHealthStats[$row['key']] ?? 0);
-                                        $percent = round(($value / $totalIndexers) * 100, 1);
-                                    @endphp
-                                    <div>
-                                        <div class="flex justify-between text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 mb-1">
-                                            <span>{{ $row['label'] }}</span>
-                                            <span>{{ $value }} ({{ $percent }}%)</span>
-                                        </div>
-                                        <div class="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-                                            <div class="h-full {{ $row['color'] }}" style="width: {{ $percent }}%"></div>
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @else
-                            <p class="text-sm text-zinc-500">{{ __('messages.not_configured_title', ['service' => 'Prowlarr']) }}</p>
-                        @endif
-                    </div>
+                    <livewire:widgets.ops-indexer-health
+                        wire:key="widgets-ops-indexer-health"
+                        :prowlarr-configured="$this->isServiceConfigured('prowlarr')"
+                        :indexer-health-stats="$indexerHealthStats"
+                    />
+                @elseif ($widgetKey === 'lib_codec_chart')
+                    <livewire:widgets.library-codec-chart wire:key="widgets-library-codec-chart" />
+                @elseif ($widgetKey === 'lib_quality_chart')
+                    <livewire:widgets.library-quality-chart wire:key="widgets-library-quality-chart" />
+                @elseif ($widgetKey === 'arr_diskspace')
+                    <livewire:widgets.arr-diskspace wire:key="widgets-arr-diskspace" />
+                @elseif ($widgetKey === 'arr_queue')
+                    <livewire:widgets.arr-queue-overview wire:key="widgets-arr-queue" />
+                @elseif ($widgetKey === 'arr_monitored')
+                    <livewire:widgets.arr-monitored wire:key="widgets-arr-monitored" />
                 @endif
             @endif
         @endforeach
