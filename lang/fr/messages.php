@@ -72,6 +72,7 @@ return [
     'dashboard_lib_codec_hevc' => 'HEVC / x265',
     'dashboard_lib_codec_other' => 'Autres codecs',
     'dashboard_lib_codec_unknown' => 'Inconnu',
+    'dashboard_lib_codec_row_pct' => ':count (:pct %)',
     'dashboard_lib_quality_other' => 'Autres qualités',
     'dashboard_lib_quality_unknown' => 'Qualité inconnue',
 

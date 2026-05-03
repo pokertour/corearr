@@ -62,7 +62,7 @@ return [
 
     'dashboard_lib_codec_title' => 'Library video codecs',
     'dashboard_lib_codec_subtitle' => 'Radial share of files (Radarr + Sonarr)',
-    'dashboard_lib_codec_center_label' => 'tracked',
+    'dashboard_lib_codec_center_label' => 'files',
     'dashboard_lib_quality_title' => 'Library quality labels',
     'dashboard_lib_quality_subtitle' => 'Per-file qualities from Arr (top 12, rest grouped)',
     'dashboard_lib_configure_arr' => 'Enable Radarr and/or Sonarr in settings.',
@@ -72,6 +72,7 @@ return [
     'dashboard_lib_codec_hevc' => 'HEVC / x265',
     'dashboard_lib_codec_other' => 'Other codecs',
     'dashboard_lib_codec_unknown' => 'Unknown',
+    'dashboard_lib_codec_row_pct' => ':count (:pct%)',
     'dashboard_lib_quality_other' => 'Other qualities',
     'dashboard_lib_quality_unknown' => 'Unknown quality',
 

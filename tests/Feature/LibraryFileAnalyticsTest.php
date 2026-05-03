@@ -5,6 +5,7 @@ use App\Services\MediaStack\MediaStackService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
@@ -110,4 +111,22 @@ test('falls back to per-movie movieFile when bulk movieFile is empty', function 
 
     expect($data['total_files'])->toBe(1)
         ->and($data['codec']['h264'])->toBe(1);
+});
+
+test('library codec widget bucket labels honor app locale', function (): void {
+    app()->setLocale('fr');
+
+    Livewire::test('widgets.library-codec-chart')
+        ->assertSuccessful()
+        ->tap(function ($component): void {
+            expect($component->instance()->codecBucketLabel('hevc'))->toBe(__('messages.dashboard_lib_codec_hevc'));
+        });
+});
+
+test('library codec row percent string is defined for en and fr', function (): void {
+    app()->setLocale('en');
+    expect(__('messages.dashboard_lib_codec_row_pct', ['count' => 2, 'pct' => '50.0']))->toBe('2 (50.0%)');
+
+    app()->setLocale('fr');
+    expect(__('messages.dashboard_lib_codec_row_pct', ['count' => 2, 'pct' => '50.0']))->toBe('2 (50.0 %)');
 });

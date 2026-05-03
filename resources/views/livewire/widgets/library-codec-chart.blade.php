@@ -29,6 +29,17 @@ new #[Lazy] class extends Component {
         $this->totalFiles = (int) ($analytics['total_files'] ?? 0);
     }
 
+    /** Human label for codec bucket keys returned by analytics. */
+    public function codecBucketLabel(string $bucket): string
+    {
+        return match ($bucket) {
+            'h264' => __('messages.dashboard_lib_codec_h264'),
+            'hevc' => __('messages.dashboard_lib_codec_hevc'),
+            'unknown' => __('messages.dashboard_lib_codec_unknown'),
+            default => __('messages.dashboard_lib_codec_other'),
+        };
+    }
+
     public function placeholder()
     {
         return <<<'HTML'
@@ -100,9 +111,9 @@ new #[Lazy] class extends Component {
                         <div class="flex items-center justify-between gap-3 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">
                             <span class="inline-flex items-center gap-2 min-w-0">
                                 <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background: {{ $hex[$key] }}"></span>
-                                <span class="truncate">{{ __('messages.dashboard_lib_codec_'.$key) }}</span>
+                                <span class="truncate">{{ $this->codecBucketLabel($key) }}</span>
                             </span>
-                            <span class="tabular-nums shrink-0">{{ $n }} ({{ round(($n / $total) * 100, 1) }}%)</span>
+                            <span class="tabular-nums shrink-0">{{ __('messages.dashboard_lib_codec_row_pct', ['count' => $n, 'pct' => number_format(($n / $total) * 100, 1, '.', '')]) }}</span>
                         </div>
                     @endif
                 @endforeach
