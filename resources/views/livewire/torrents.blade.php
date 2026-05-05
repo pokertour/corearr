@@ -108,6 +108,9 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                 'added_on' => $t['added_on'] ?? 0,
                 'speed' => ($t['dlspeed'] ?? 0) + ($t['upspeed'] ?? 0),
                 'ratio' => $t['ratio'] ?? 0,
+                'state' => strtolower((string) ($t['state'] ?? '')),
+                'eta' => $t['eta'] ?? -1,
+                'tracker' => strtolower((string) (parse_url($t['tracker'] ?? '', PHP_URL_HOST) ?: ($t['tracker'] ?? ''))),
                 default => $t[$this->sortBy] ?? 0,
             };
         }, SORT_REGULAR, $this->sortDir === 'desc');
@@ -324,6 +327,9 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                         <option value="added_on">{{ __('messages.added') }}</option>
                         <option value="speed">{{ __('messages.download_speed') }}</option>
                         <option value="ratio">{{ __('messages.ratio') }}</option>
+                        <option value="state">{{ __('messages.status') }}</option>
+                        <option value="eta">ETA</option>
+                        <option value="tracker">{{ __('messages.tracker') }}</option>
                     </select>
 
                     <button wire:click="$set('sortDir', '{{ $sortDir === 'asc' ? 'desc' : 'asc' }}')" 
@@ -395,11 +401,23 @@ new #[Layout('components.layouts.app')] #[Title('messages.torrents')] class exte
                                 {{ __('messages.progress') }} @if($sortBy === 'progress') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
                             </th> 
                         @endif
-                        @if($columns['status']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center">{{ __('messages.status') }}</th> @endif
+                        @if($columns['status'])
+                            <th wire:click="setSort('state')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center cursor-pointer hover:text-zinc-900 dark:hover:text-white transition">
+                                {{ __('messages.status') }} @if($sortBy === 'state') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
+                            </th>
+                        @endif
                         @if($columns['speed']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center">{{ __('messages.download_speed') }}/{{ __('messages.upload_speed') }}</th> @endif
-                        @if($columns['eta']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center">ETA</th> @endif
-                        @if($columns['ratio']) <th wire:click="setSort('ratio')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition text-center">{{ __('messages.ratio') }}</th> @endif
-                        @if($columns['tracker']) <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">{{ __('messages.tracker') }}</th> @endif
+                        @if($columns['eta'])
+                            <th wire:click="setSort('eta')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-center cursor-pointer hover:text-zinc-900 dark:hover:text-white transition">
+                                ETA @if($sortBy === 'eta') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
+                            </th>
+                        @endif
+                        @if($columns['ratio']) <th wire:click="setSort('ratio')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition text-center">{{ __('messages.ratio') }} @if($sortBy === 'ratio') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif</th> @endif
+                        @if($columns['tracker'])
+                            <th wire:click="setSort('tracker')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition">
+                                {{ __('messages.tracker') }} @if($sortBy === 'tracker') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif
+                            </th>
+                        @endif
                         @if($columns['added']) 
                             <th wire:click="setSort('added_on')" class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:text-zinc-900 dark:hover:text-white transition text-right">
                                 {{ __('messages.added') }} @if($sortBy === 'added_on') {{ $sortDir === 'asc' ? '↑' : '↓' }} @endif

@@ -255,6 +255,8 @@ return [
     'delete_confirm' => 'Delete this indexer?',
     'enabled' => 'Enabled',
     'disabled' => 'Disabled',
+    'state' => 'State',
+    'unavailable' => 'Unavailable',
     'indexer' => 'Indexer',
 
     // Settings
@@ -312,6 +314,8 @@ return [
     'delete' => 'Delete',
     'edit' => 'Edit',
     'status' => 'Status',
+    'indexer_unavailable_alert_title' => 'Unavailable indexer(s)',
+    'indexer_unavailable_alert_message' => 'The following indexers are unavailable: :indexers.',
     'actions' => 'Actions',
     'search' => 'Search',
     'loading' => 'Loading...',

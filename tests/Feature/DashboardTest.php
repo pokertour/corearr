@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\ServiceSetting;
 use App\Models\User;
+use App\Services\MediaStack\MediaStackService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 
@@ -47,4 +49,38 @@ test('authenticated users can persist dashboard widget order', function () {
 
     expect($order[0] ?? null)->toBe('qbit_download_speed')
         ->and($order[1] ?? null)->toBe('qbit_downloads_count');
+});
+
+test('dashboard shows an alert when an indexer is unavailable', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    ServiceSetting::create([
+        'service_name' => 'prowlarr',
+        'base_url' => 'http://prowlarr.local',
+        'api_key' => 'test-key',
+        'is_active' => true,
+    ]);
+
+    $this->mock(MediaStackService::class, function ($mock): void {
+        $mock->shouldReceive('getArrStats')->once()->andReturn([]);
+        $mock->shouldReceive('getIndexers')->once()->andReturn([
+            [
+                'id' => 1,
+                'name' => 'Indexer HS',
+                'enable' => true,
+                'message' => 'Connection timed out',
+            ],
+            [
+                'id' => 2,
+                'name' => 'Indexer OK',
+                'enable' => true,
+            ],
+        ]);
+    });
+
+    Livewire::test('dashboard')
+        ->assertSee(__('messages.indexer_unavailable_alert_title'))
+        ->assertSee('Indexer HS')
+        ->assertDontSee('Indexer OK');
 });

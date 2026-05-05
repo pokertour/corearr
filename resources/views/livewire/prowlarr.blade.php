@@ -89,6 +89,15 @@ new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attribute
             $this->dispatch('toast', message: __('messages.error_performing_action'), type: 'error');
         }
     }
+
+    public function isIndexerUnavailable(array $indexer): bool
+    {
+        if (! ($indexer['enable'] ?? false)) {
+            return false;
+        }
+
+        return ! empty($indexer['lastError']) || ! empty($indexer['message']);
+    }
 };
 
 ?>
@@ -156,6 +165,8 @@ new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attribute
                             <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
                                 {{ __('messages.status') }}</th>
                             <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                                {{ __('messages.state') }}</th>
+                            <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
                                 {{ __('messages.tags') }}</th>
                             <th class="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">
                                 {{ __('messages.actions') }}</th>
@@ -202,6 +213,21 @@ new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attribute
                                             {{ $indexer['enable'] ?? false ? __('messages.enabled') : __('messages.disabled') }}
                                         </span>
                                     </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    @if (! ($indexer['enable'] ?? false))
+                                        <span class="text-xs text-zinc-400">-</span>
+                                    @elseif ($this->isIndexerUnavailable($indexer))
+                                        <span
+                                            class="inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                                            {{ __('messages.unavailable') }}
+                                        </span>
+                                    @else
+                                        <span
+                                            class="inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
+                                            {{ __('messages.available') }}
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="px-6 py-4">
                                     <div class="flex flex-wrap gap-1">
@@ -251,7 +277,7 @@ new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attribute
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="px-6 py-12 text-center text-zinc-500">
+                                <td colspan="7" class="px-6 py-12 text-center text-zinc-500">
                                     {{ __('messages.no_indexers_found') }}
                                 </td>
                             </tr>
