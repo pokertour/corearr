@@ -257,6 +257,7 @@ return [
     'disabled' => 'Disabled',
     'state' => 'State',
     'unavailable' => 'Unavailable',
+    'indexer_failure_until' => 'Indexer failing — retry scheduled at :until',
     'indexer' => 'Indexer',
 
     // Settings

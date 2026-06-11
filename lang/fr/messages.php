@@ -257,6 +257,7 @@ return [
     'disabled' => 'Désactivé',
     'state' => 'État',
     'unavailable' => 'Indisponible',
+    'indexer_failure_until' => 'Indexeur en échec — réessai prévu le :until',
     'indexer' => 'Indexeur',
 
     // Settings

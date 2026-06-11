@@ -76,11 +76,25 @@ test('dashboard shows an alert when an indexer is unavailable', function () {
                 'name' => 'Indexer OK',
                 'enable' => true,
             ],
+            [
+                'id' => 3,
+                'name' => 'Indexer Failing',
+                'enable' => true,
+            ],
+        ]);
+        $mock->shouldReceive('getIndexersStatus')->once()->andReturn([
+            [
+                'indexerId' => 3,
+                'disabledTill' => '2026-06-12T08:52:52Z',
+                'mostRecentFailure' => '2026-06-11T08:52:52Z',
+                'initialFailure' => '2026-05-19T06:30:58Z',
+            ],
         ]);
     });
 
     Livewire::test('dashboard')
         ->assertSee(__('messages.indexer_unavailable_alert_title'))
         ->assertSee('Indexer HS')
+        ->assertSee('Indexer Failing')
         ->assertDontSee('Indexer OK');
 });

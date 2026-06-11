@@ -22,11 +22,13 @@ test('MediaStackService returns false for ID 0 but does not crash', function () 
         'is_active' => true,
     ]);
 
-    Log::shouldReceive('warning')->withArgs(fn ($msg) => str_contains($msg, 'invalid ID 0'))->once();
+    Log::spy();
 
     $result = $service->deleteMedia('radarr', 0);
 
     expect($result)->toBeFalse();
+
+    Log::shouldHaveReceived('warning')->withArgs(fn ($msg) => str_contains($msg, 'invalid ID 0'))->once();
 });
 
 test('DeleteMediaJob skips Arr deletion if ID is 0 and not found by TMDB', function () {
@@ -37,7 +39,7 @@ test('DeleteMediaJob skips Arr deletion if ID is 0 and not found by TMDB', funct
     $jellyseerr = Mockery::mock(JellyseerrService::class);
 
     // Should try to find by TMDB
-    $arrService->shouldReceive('findMediaByTmdbId')->with('radarr', 12345)->once()->andReturn(null);
+    $arrService->shouldReceive('findMediaIdsByTmdbId')->with('radarr', 12345)->once()->andReturn([]);
 
     // Should NOT call deleteMedia because ID is 0 and fallback failed
     $arrService->shouldNotReceive('deleteMedia');
@@ -45,12 +47,14 @@ test('DeleteMediaJob skips Arr deletion if ID is 0 and not found by TMDB', funct
     // Should still delete Jellyseerr request
     $jellyseerr->shouldReceive('deleteRequest')->with(1)->once()->andReturn(true);
 
-    Log::shouldReceive('info')->withArgs(fn ($msg) => str_contains($msg, 'Skipping Arr deletion'))->once();
+    Log::spy();
 
     $job = new DeleteMediaJob(1, 'radarr', 0, 'Test Movie', 12345);
     $job->handle($arrService, $jellyseerr);
 
     expect(Cache::get('deleting_media_1'))->toBeNull();
+
+    Log::shouldHaveReceived('debug')->withArgs(fn ($msg) => str_contains($msg, 'No Arr IDs found'))->once();
 });
 
 test('DeleteMediaJob uses fallback ID if external ID is 0', function () {
@@ -61,10 +65,13 @@ test('DeleteMediaJob uses fallback ID if external ID is 0', function () {
     $jellyseerr = Mockery::mock(JellyseerrService::class);
 
     // Should find by TMDB
-    $arrService->shouldReceive('findMediaByTmdbId')->with('radarr', 12345)->once()->andReturn(999);
+    $arrService->shouldReceive('findMediaIdsByTmdbId')->with('radarr', 12345)->once()->andReturn([999]);
 
     // Should call deleteMedia with the found ID
     $arrService->shouldReceive('deleteMedia')->with('radarr', 999, true)->once()->andReturn(true);
+
+    // Post-delete verification should find nothing left
+    $arrService->shouldReceive('findMediaByTmdbId')->with('radarr', 12345)->once()->andReturn(null);
 
     // Should delete Jellyseerr request
     $jellyseerr->shouldReceive('deleteRequest')->with(1)->once()->andReturn(true);

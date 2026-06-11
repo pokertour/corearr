@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 class MediaProxyController extends Controller
 {
     /**
-     * Proxy image requests to Arr services with Hybrid Auth (Header + Query).
+     * Proxy image requests to Arr services (authenticated via X-Api-Key header).
      */
     public function __invoke(string $service, string $path, Request $request)
     {
@@ -32,16 +32,13 @@ class MediaProxyController extends Controller
             abort(403, 'Accès non autorisé ou lien expiré.');
         }
 
-        // 3. Build Target URL
+        // 3. Build Target URL (API key is only sent via the X-Api-Key header, never in the URL)
         $targetUrl = rtrim($settings->base_url, '/').'/'.$cleanPath;
-
-        // 3. Add API Key to Internal Query (Some versions of Arr ignore Headers for static assets)
-        $targetUrl .= (str_contains($targetUrl, '?') ? '&' : '?').'apikey='.$settings->api_key;
 
         // 4. Forward any extra query parameters (except apikey)
         foreach ($request->query() as $key => $val) {
             if ($key !== 'apikey') {
-                $targetUrl .= "&$key=".urlencode($val);
+                $targetUrl .= (str_contains($targetUrl, '?') ? '&' : '?')."$key=".urlencode($val);
             }
         }
 

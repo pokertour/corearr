@@ -110,9 +110,14 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
 
         if ($this->isServiceConfigured('prowlarr')) {
             $indexers = $service->getIndexers();
-            $this->indexerHealthStats = $this->buildIndexerHealthStats($indexers);
+            $failingIds = collect($service->getIndexersStatus())
+                ->filter(fn ($status) => is_array($status) && isset($status['indexerId']))
+                ->pluck('indexerId')
+                ->all();
+            $this->indexerHealthStats = $this->buildIndexerHealthStats($indexers, $failingIds);
             $this->unavailableIndexers = collect($indexers)
-                ->filter(fn (array $indexer): bool => ($indexer['enable'] ?? false) && (! empty($indexer['lastError']) || ! empty($indexer['message'])))
+                ->filter(fn (array $indexer): bool => ($indexer['enable'] ?? false)
+                    && (! empty($indexer['lastError']) || ! empty($indexer['message']) || in_array($indexer['id'] ?? 0, $failingIds, true)))
                 ->map(fn (array $indexer): string => (string) ($indexer['name'] ?? 'Indexer'))
                 ->values()
                 ->all();
@@ -320,7 +325,10 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
         ];
     }
 
-    protected function buildIndexerHealthStats(array $indexers): array
+    /**
+     * @param  list<int>  $failingIds  Indexer IDs currently failing according to Prowlarr's indexerstatus endpoint
+     */
+    protected function buildIndexerHealthStats(array $indexers, array $failingIds = []): array
     {
         $enabled = 0;
         $degraded = 0;
@@ -328,7 +336,9 @@ new #[Layout('components.layouts.app')] #[Title('messages.dashboard')] class ext
 
         foreach ($indexers as $indexer) {
             $isEnabled = (bool) ($indexer['enable'] ?? false);
-            $hasError = ! empty($indexer['lastError']) || ! empty($indexer['message']);
+            $hasError = ! empty($indexer['lastError'])
+                || ! empty($indexer['message'])
+                || in_array($indexer['id'] ?? 0, $failingIds, true);
 
             if (! $isEnabled) {
                 $disabled++;

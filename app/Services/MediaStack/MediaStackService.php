@@ -3,6 +3,7 @@
 namespace App\Services\MediaStack;
 
 use App\Models\ServiceSetting;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -138,6 +139,56 @@ class MediaStackService
     }
 
     /**
+     * Authenticate against qBittorrent, caching the SID cookie to avoid a login round-trip on every call.
+     */
+    private function getQbitSessionCookie(ServiceSetting $settings, bool $forceRefresh = false): ?string
+    {
+        $cacheKey = 'corearr:qbit_session_cookie';
+
+        if ($forceRefresh) {
+            Cache::forget($cacheKey);
+        }
+
+        return Cache::remember($cacheKey, now()->addMinutes(30), function () use ($settings) {
+            $response = Http::asForm()->post(rtrim($settings->base_url, '/').'/api/v2/auth/login', [
+                'username' => $settings->username,
+                'password' => $settings->password,
+            ]);
+
+            if (! $response->successful() || ! $response->header('Set-Cookie')) {
+                return null;
+            }
+
+            return $response->header('Set-Cookie');
+        });
+    }
+
+    /**
+     * Run a qBittorrent GET request with the cached session, re-authenticating once on 403.
+     */
+    private function qbitGet(ServiceSetting $settings, string $endpoint): ?Response
+    {
+        $url = rtrim($settings->base_url, '/');
+        $cookie = $this->getQbitSessionCookie($settings);
+
+        if (! $cookie) {
+            return null;
+        }
+
+        $response = Http::withHeaders(['Cookie' => $cookie])->get($url.$endpoint);
+
+        if ($response->status() === 403) {
+            $cookie = $this->getQbitSessionCookie($settings, forceRefresh: true);
+            if (! $cookie) {
+                return null;
+            }
+            $response = Http::withHeaders(['Cookie' => $cookie])->get($url.$endpoint);
+        }
+
+        return $response;
+    }
+
+    /**
      * Get real-time data for qBittorrent
      */
     public function getQbitData(): array
@@ -147,23 +198,9 @@ class MediaStackService
             return [];
         }
 
-        $url = rtrim($settings->base_url, '/');
+        $mainData = $this->qbitGet($settings, '/api/v2/sync/maindata');
 
-        // Use cookie session if possible, or login again
-        $response = Http::asForm()->post($url.'/api/v2/auth/login', [
-            'username' => $settings->username,
-            'password' => $settings->password,
-        ]);
-
-        if (! $response->successful()) {
-            return [];
-        }
-
-        $cookie = $response->header('Set-Cookie');
-
-        $mainData = Http::withHeaders(['Cookie' => $cookie])->get($url.'/api/v2/sync/maindata');
-
-        return $mainData->successful() ? $mainData->json() : [];
+        return $mainData && $mainData->successful() ? $mainData->json() : [];
     }
 
     /**
@@ -182,21 +219,9 @@ class MediaStackService
             return [];
         }
 
-        $url = rtrim($settings->base_url, '/');
+        $transfer = $this->qbitGet($settings, '/api/v2/transfer/info');
 
-        $response = Http::asForm()->post($url.'/api/v2/auth/login', [
-            'username' => $settings->username,
-            'password' => $settings->password,
-        ]);
-
-        if (! $response->successful()) {
-            return [];
-        }
-
-        $cookie = $response->header('Set-Cookie');
-        $transfer = Http::withHeaders(['Cookie' => $cookie])->get($url.'/api/v2/transfer/info');
-
-        return $transfer->successful() ? ($transfer->json() ?? []) : [];
+        return $transfer && $transfer->successful() ? ($transfer->json() ?? []) : [];
     }
 
     /**
@@ -235,9 +260,18 @@ class MediaStackService
     }
 
     /**
-     * Get system health and overall stats for Arr services
+     * Get system health and overall stats for Arr services (concurrent requests, short cache)
      */
     public function getArrStats(): array
+    {
+        return Cache::remember(
+            'corearr:arr_stats:v1',
+            now()->addMinutes(2),
+            fn () => $this->buildArrStats()
+        );
+    }
+
+    private function buildArrStats(): array
     {
         $services = ServiceSetting::whereIn('service_name', ['sonarr', 'radarr', 'prowlarr'])->where('is_active', true)->get()->keyBy('service_name');
 
@@ -247,42 +281,53 @@ class MediaStackService
             'prowlarr' => ['count' => 0, 'health' => 'OK'],
         ];
 
-        foreach ($services as $name => $s) {
-            $baseUrl = rtrim($s->base_url, '/');
-            $apiKey = $s->api_key;
+        if ($services->isEmpty()) {
+            return $stats;
+        }
 
-            if ($name === 'radarr' || $name === 'sonarr') {
-                $v = '/api/v3';
+        $responses = Http::pool(function ($pool) use ($services) {
+            $requests = [];
 
-                // Count
-                $countRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl."$v/".($name === 'radarr' ? 'movie' : 'series'));
-                if ($countRes->successful()) {
-                    $stats[$name]['count'] = count($countRes->json());
+            foreach ($services as $name => $s) {
+                $baseUrl = rtrim($s->base_url, '/');
+                $headers = ['X-Api-Key' => $s->api_key];
+
+                if ($name === 'radarr' || $name === 'sonarr') {
+                    $requests[] = $pool->as("$name.list")->withHeaders($headers)->get($baseUrl.'/api/v3/'.($name === 'radarr' ? 'movie' : 'series'));
+                    $requests[] = $pool->as("$name.disk")->withHeaders($headers)->get($baseUrl.'/api/v3/diskspace');
+                    $requests[] = $pool->as("$name.health")->withHeaders($headers)->get($baseUrl.'/api/v3/health');
                 }
 
-                // Disk
-                $diskRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl."$v/diskspace");
-                if ($diskRes->successful() && ! empty($diskRes->json())) {
-                    $mainDisk = collect($diskRes->json())->first();
-                    $stats[$name]['disk'] = [
-                        'free' => $mainDisk['freeSpace'] ?? 0,
-                        'total' => $mainDisk['totalSpace'] ?? 0,
-                        'path' => $mainDisk['path'] ?? '/',
-                    ];
+                if ($name === 'prowlarr') {
+                    $requests[] = $pool->as('prowlarr.indexers')->withHeaders($headers)->get($baseUrl.'/api/v1/indexer');
+                    $requests[] = $pool->as('prowlarr.health')->withHeaders($headers)->get($baseUrl.'/api/v1/health');
                 }
+            }
 
-                // Episodes count for Sonarr
-                if ($name === 'sonarr' && $countRes->successful()) {
-                    $items = $countRes->json();
+            return $requests;
+        });
+
+        $ok = fn (string $key): bool => isset($responses[$key])
+            && $responses[$key] instanceof Response
+            && $responses[$key]->successful();
+
+        foreach (['radarr', 'sonarr'] as $name) {
+            if (! $services->has($name)) {
+                continue;
+            }
+
+            if ($ok("$name.list")) {
+                $items = $responses["$name.list"]->json();
+                $stats[$name]['count'] = count($items);
+
+                if ($name === 'sonarr') {
                     $stats[$name]['episodes'] = [
                         'total' => collect($items)->sum('statistics.episodeCount'),
                         'downloaded' => collect($items)->sum('statistics.episodeFileCount'),
                     ];
                 }
 
-                // Movies count for Radarr
-                if ($name === 'radarr' && $countRes->successful()) {
-                    $items = $countRes->json();
+                if ($name === 'radarr') {
                     $stats[$name]['movies'] = [
                         'total' => count($items),
                         'downloaded' => collect($items)->where('hasFile', true)->count(),
@@ -290,18 +335,27 @@ class MediaStackService
                 }
             }
 
-            if ($name === 'prowlarr') {
-                $indexerRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl.'/api/v1/indexer');
-                if ($indexerRes->successful()) {
-                    $stats['prowlarr']['count'] = count($indexerRes->json());
-                }
+            if ($ok("$name.disk") && ! empty($responses["$name.disk"]->json())) {
+                $mainDisk = collect($responses["$name.disk"]->json())->first();
+                $stats[$name]['disk'] = [
+                    'free' => $mainDisk['freeSpace'] ?? 0,
+                    'total' => $mainDisk['totalSpace'] ?? 0,
+                    'path' => $mainDisk['path'] ?? '/',
+                ];
             }
 
-            // Health check for all (simplified)
-            $healthUrl = ($name === 'prowlarr') ? '/api/v1/health' : '/api/v3/health';
-            $healthRes = Http::withHeaders(['X-Api-Key' => $apiKey])->get($baseUrl.$healthUrl);
-            if ($healthRes->successful() && ! empty($healthRes->json())) {
+            if ($ok("$name.health") && ! empty($responses["$name.health"]->json())) {
                 $stats[$name]['health'] = 'Warning';
+            }
+        }
+
+        if ($services->has('prowlarr')) {
+            if ($ok('prowlarr.indexers')) {
+                $stats['prowlarr']['count'] = count($responses['prowlarr.indexers']->json());
+            }
+
+            if ($ok('prowlarr.health') && ! empty($responses['prowlarr.health']->json())) {
+                $stats['prowlarr']['health'] = 'Warning';
             }
         }
 
@@ -601,7 +655,7 @@ class MediaStackService
      */
     public function deleteMedia(string $service, int $id, bool $deleteFiles = false): bool
     {
-        Log::info('MediaStackService->deleteMedia started', ['service' => $service, 'id' => $id, 'deleteFiles' => $deleteFiles]);
+        Log::debug('MediaStackService->deleteMedia started', ['service' => $service, 'id' => $id, 'deleteFiles' => $deleteFiles]);
 
         $settings = ServiceSetting::where('service_name', $service)->first();
         if (! $settings || $id <= 0) {
@@ -630,7 +684,7 @@ class MediaStackService
             ->withQueryParameters($params)
             ->delete($url);
 
-        Log::info('MediaStack Delete Request Sent', [
+        Log::debug('MediaStack Delete Request Sent', [
             'url' => $url,
             'params' => $params,
             'status' => $response->status(),
@@ -651,6 +705,14 @@ class MediaStackService
     public function getIndexers(): array
     {
         return $this->request('prowlarr', 'GET', 'indexer');
+    }
+
+    /**
+     * Get indexers status from Prowlarr
+     */
+    public function getIndexersStatus(): array
+    {
+        return $this->request('prowlarr', 'GET', 'indexerstatus');
     }
 
     /**
@@ -753,20 +815,9 @@ class MediaStackService
 
         $url = rtrim($settings->base_url, '/');
 
-        // Ensure authentication
-        $authResponse = Http::asForm()->post($url.'/api/v2/auth/login', [
-            'username' => $settings->username,
-            'password' => $settings->password,
-        ]);
+        $cookie = $this->getQbitSessionCookie($settings);
 
-        if ($authResponse->successful()) {
-            $cookie = $authResponse->header('Set-Cookie');
-            if (! $cookie) {
-                Log::warning('qBittorrent: Aucun cookie SID trouvé dans la réponse de login.');
-
-                return false;
-            }
-
+        if ($cookie) {
             $endpoint = match ($action) {
                 'pause' => '/api/v2/torrents/pause',
                 'resume' => '/api/v2/torrents/resume',
@@ -795,6 +846,19 @@ class MediaStackService
                 'Referer' => $url,
                 'Origin' => $url,
             ])->asForm()->post($url.$endpoint, $payload);
+
+            // Cached session may have expired — re-authenticate once and retry
+            if ($res->status() === 403) {
+                $cookie = $this->getQbitSessionCookie($settings, forceRefresh: true);
+                if (! $cookie) {
+                    return false;
+                }
+                $res = Http::withHeaders([
+                    'Cookie' => $cookie,
+                    'Referer' => $url,
+                    'Origin' => $url,
+                ])->asForm()->post($url.$endpoint, $payload);
+            }
 
             // Handle qBittorrent v5.0+ where pause/resume are stop/start
             if ($res->status() === 404 && in_array($action, ['pause', 'resume'])) {
@@ -914,13 +978,13 @@ class MediaStackService
      */
     public function findMediaByTmdbId(string $service, int $tmdbId): ?int
     {
-        Log::info('MediaStackService->findMediaByTmdbId started', ['service' => $service, 'tmdbId' => $tmdbId]);
+        Log::debug('MediaStackService->findMediaByTmdbId started', ['service' => $service, 'tmdbId' => $tmdbId]);
 
         $ids = $this->findMediaIdsByTmdbId($service, $tmdbId);
         $id = $ids[0] ?? null;
 
         if ($id) {
-            Log::info("MediaStack Fallback: Found ID $id");
+            Log::debug("MediaStack Fallback: Found ID $id");
         } else {
             Log::warning("MediaStack Fallback: No media found for TMDB $tmdbId in $service");
         }

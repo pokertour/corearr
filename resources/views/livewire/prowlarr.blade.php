@@ -6,6 +6,10 @@ use App\Models\ServiceSetting;
 
 new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attributes\Title('messages.indexers')] class extends Component {
     public array $indexers = [];
+
+    /** @var array<int, array{indexerId: int, disabledTill: string|null, mostRecentFailure: string|null, initialFailure: string|null}> */
+    public array $indexerStatuses = [];
+
     public bool $isConfigured = false;
     public bool $loading = false;
 
@@ -28,6 +32,10 @@ new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attribute
         $this->indexers = collect($service->getIndexers())
             ->sortBy(fn (array $indexer) => (int) ($indexer['priority'] ?? 25))
             ->values()
+            ->all();
+        $this->indexerStatuses = collect($service->getIndexersStatus())
+            ->filter(fn ($status) => is_array($status) && isset($status['indexerId']))
+            ->keyBy('indexerId')
             ->all();
         $this->loading = false;
     }
@@ -96,7 +104,19 @@ new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attribute
             return false;
         }
 
-        return ! empty($indexer['lastError']) || ! empty($indexer['message']);
+        return ! empty($indexer['lastError'])
+            || ! empty($indexer['message'])
+            || $this->getIndexerFailure($indexer) !== null;
+    }
+
+    /**
+     * Failure entry from Prowlarr's indexerstatus endpoint, if the indexer is currently failing.
+     *
+     * @return array{indexerId: int, disabledTill: string|null, mostRecentFailure: string|null, initialFailure: string|null}|null
+     */
+    public function getIndexerFailure(array $indexer): ?array
+    {
+        return $this->indexerStatuses[$indexer['id'] ?? 0] ?? null;
     }
 };
 
@@ -218,8 +238,16 @@ new #[Livewire\Attributes\Layout('components.layouts.app')] #[Livewire\Attribute
                                     @if (! ($indexer['enable'] ?? false))
                                         <span class="text-xs text-zinc-400">-</span>
                                     @elseif ($this->isIndexerUnavailable($indexer))
+                                        @php $failure = $this->getIndexerFailure($indexer); @endphp
                                         <span
-                                            class="inline-flex items-center px-2 py-0.5 text-[10px] font-bold rounded bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                                            class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20"
+                                            @if ($failure && !empty($failure['disabledTill']))
+                                                title="{{ __('messages.indexer_failure_until', ['until' => \Illuminate\Support\Carbon::parse($failure['disabledTill'])->timezone(config('app.timezone'))->format('d/m/Y H:i')]) }}"
+                                            @endif>
+                                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                            </svg>
                                             {{ __('messages.unavailable') }}
                                         </span>
                                     @else
